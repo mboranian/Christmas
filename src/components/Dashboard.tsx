@@ -14,18 +14,30 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [allLists, setAllLists] = useState<ChristmasList[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'my-list' | 'all-lists'>('my-list');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     loadData();
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadData = () => {
-    const userList = getUserList(currentUser.id);
-    setCurrentList(userList || null);
-    setAllLists(getAllLists());
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [userList, lists] = await Promise.all([
+        getUserList(currentUser.id),
+        getAllLists()
+      ]);
+      setCurrentList(userList || null);
+      setAllLists(lists);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const createNewList = () => {
+  const createNewList = async () => {
     const newList: ChristmasList = {
       id: generateId(),
       ownerId: currentUser.id,
@@ -34,11 +46,18 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       createdAt: Date.now(),
     };
     setCurrentList(newList);
-    createOrUpdateUserList(newList);
-    loadData();
+    setIsSyncing(true);
+    try {
+      await createOrUpdateUserList(newList);
+      await loadData();
+    } catch (error) {
+      console.error('Error creating list:', error);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const addItem = (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
+  const addItem = async (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
     if (!currentList) return;
 
     const newItem: ChristmasItem = {
@@ -54,12 +73,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     };
 
     setCurrentList(updatedList);
-    createOrUpdateUserList(updatedList);
     setShowAddForm(false);
-    loadData();
+    setIsSyncing(true);
+    try {
+      await createOrUpdateUserList(updatedList);
+      await loadData();
+    } catch (error) {
+      console.error('Error adding item:', error);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const deleteItem = (itemId: string) => {
+  const deleteItem = async (itemId: string) => {
     if (!currentList) return;
 
     const updatedList = {
@@ -68,34 +94,65 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     };
 
     setCurrentList(updatedList);
-    createOrUpdateUserList(updatedList);
-    loadData();
-  };
-
-  const toggleItemCheck = (listOwnerId: string, itemId: string) => {
-    const lists = getAllLists();
-    const listIndex = lists.findIndex(list => list.ownerId === listOwnerId);
-    
-    if (listIndex === -1) return;
-
-    const list = lists[listIndex];
-    const itemIndex = list.items.findIndex(item => item.id === itemId);
-    
-    if (itemIndex === -1) return;
-
-    const item = list.items[itemIndex];
-    const isCurrentlyChecked = item.checkedBy.includes(currentUser.id);
-
-    if (isCurrentlyChecked) {
-      item.checkedBy = item.checkedBy.filter(userId => userId !== currentUser.id);
-    } else {
-      item.checkedBy.push(currentUser.id);
+    setIsSyncing(true);
+    try {
+      await createOrUpdateUserList(updatedList);
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting item:', error);
+    } finally {
+      setIsSyncing(false);
     }
-
-    lists[listIndex] = list;
-    createOrUpdateUserList(list);
-    loadData();
   };
+
+  const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
+    setIsSyncing(true);
+    try {
+      const lists = await getAllLists();
+      const listIndex = lists.findIndex(list => list.ownerId === listOwnerId);
+      
+      if (listIndex === -1) return;
+
+      const list = lists[listIndex];
+      const itemIndex = list.items.findIndex(item => item.id === itemId);
+      
+      if (itemIndex === -1) return;
+
+      const item = list.items[itemIndex];
+      const isCurrentlyChecked = item.checkedBy.includes(currentUser.id);
+
+      if (isCurrentlyChecked) {
+        item.checkedBy = item.checkedBy.filter(userId => userId !== currentUser.id);
+      } else {
+        item.checkedBy.push(currentUser.id);
+      }
+
+      await createOrUpdateUserList(list);
+      await loadData();
+    } catch (error) {
+      console.error('Error toggling item check:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="dashboard">
+        <header className="dashboard-header">
+          <h1>🎄 Christmas List Manager</h1>
+          <div className="user-info">
+            <span>Welcome, {currentUser.name}!</span>
+            <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
+          </div>
+        </header>
+        <div className="loading-container">
+          <div className="loading-spinner">🎄</div>
+          <p>Loading Christmas lists...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard">
@@ -103,6 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         <h1>🎄 Christmas List Manager</h1>
         <div className="user-info">
           <span>Welcome, {currentUser.name}!</span>
+          {isSyncing && <span className="sync-indicator">🔄 Syncing...</span>}
           <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
         </div>
       </header>
@@ -131,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                 <button 
                   onClick={() => setShowAddForm(true)} 
                   className="add-item-button"
-                  disabled={showAddForm}
+                  disabled={showAddForm || isSyncing}
                 >
                   + Add Item
                 </button>
@@ -141,7 +199,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
             {!currentList ? (
               <div className="empty-state">
                 <p>You haven't created your Christmas list yet!</p>
-                <button onClick={createNewList} className="create-list-button">
+                <button 
+                  onClick={createNewList} 
+                  className="create-list-button"
+                  disabled={isSyncing}
+                >
                   Create My List
                 </button>
               </div>
