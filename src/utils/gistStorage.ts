@@ -1,7 +1,7 @@
 import { ChristmasList } from '../types';
 
 // GitHub Gist configuration - using your account's private gist
-const GIST_ID = 'e8c7b9d4f1a2c3e5d6f7g8h9i0j1k2l3'; // Replace with your actual Gist ID
+const GIST_ID = '3370860fec5883043706513ba276fe67'; // Replace with your actual Gist ID
 const GIST_FILENAME = 'christmas-lists.json';
 
 interface GistData {
