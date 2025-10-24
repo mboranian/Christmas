@@ -38,12 +38,20 @@ class GitHubGistStorage {
       }
     };
 
+    // Note: For now, we'll skip the actual Gist update due to CORS and auth issues
+    // The data is still saved to localStorage as a fallback
+    console.log('Would update Gist with:', data);
+    
+    // TODO: Implement proper authentication or use a backend proxy
+    // Uncomment when you add a GitHub token or backend:
+    /*
     try {
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Christmas-Lists-App'
+          'User-Agent': 'Christmas-Lists-App',
+          'Authorization': 'token YOUR_GITHUB_TOKEN' // Add your token here
         },
         body: JSON.stringify(updatePayload)
       });
@@ -55,19 +63,27 @@ class GitHubGistStorage {
       console.error('Error updating gist:', error);
       throw error;
     }
+    */
   }
 
   private async fetchGist(gistId: string): Promise<GistData | null> {
+    // Note: Skipping Gist fetch for now due to CORS/rate limit issues
+    console.log('Would fetch from Gist ID:', gistId);
+    return null;
+    
+    // TODO: Implement proper authentication or use a backend proxy  
+    // Uncomment when you add a GitHub token or backend:
+    /*
     try {
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         headers: {
-          'User-Agent': 'Christmas-Lists-App'
+          'User-Agent': 'Christmas-Lists-App',
+          'Authorization': 'token YOUR_GITHUB_TOKEN' // Add your token here
         }
       });
 
       if (!response.ok) {
         if (response.status === 404) {
-          // Gist not found - this should not happen with hardcoded ID
           throw new Error('Christmas Lists Gist not found. Please contact support.');
         }
         throw new Error(`Failed to fetch gist: ${response.status}`);
@@ -85,6 +101,7 @@ class GitHubGistStorage {
       console.error('Error fetching gist:', error);
       return null;
     }
+    */
   }
 
   async loadLists(): Promise<ChristmasList[]> {
