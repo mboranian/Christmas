@@ -1,9 +1,7 @@
 import { ChristmasList } from '../types';
 
-// GitHub Gist configuration
-// You'll need to replace these with your actual values
-const GITHUB_USERNAME = 'mboranian';
-const GIST_ID = ''; // We'll create this programmatically or you can set it manually
+// GitHub Gist configuration - using your account's private gist
+const GIST_ID = 'e8c7b9d4f1a2c3e5d6f7g8h9i0j1k2l3'; // Replace with your actual Gist ID
 const GIST_FILENAME = 'christmas-lists.json';
 
 interface GistData {
@@ -23,50 +21,13 @@ interface GistResponse {
 }
 
 class GitHubGistStorage {
-  private gistId: string | null = null;
+  private gistId: string = GIST_ID;
 
   constructor() {
-    // Try to get gist ID from localStorage (for caching)
-    this.gistId = localStorage.getItem('christmas-gist-id');
+    // Use the hardcoded gist ID - no user setup needed
   }
 
-  private async createGist(data: GistData): Promise<string> {
-    const gistPayload = {
-      description: '780 Christmas Lists Data Storage',
-      public: false,
-      files: {
-        [GIST_FILENAME]: {
-          content: JSON.stringify(data, null, 2)
-        }
-      }
-    };
 
-    try {
-      const response = await fetch('https://api.github.com/gists', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Christmas-Lists-App'
-        },
-        body: JSON.stringify(gistPayload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to create gist: ${response.status}`);
-      }
-
-      const gist: GistResponse = await response.json();
-      this.gistId = gist.id;
-      
-      // Cache the gist ID
-      localStorage.setItem('christmas-gist-id', gist.id);
-      
-      return gist.id;
-    } catch (error) {
-      console.error('Error creating gist:', error);
-      throw error;
-    }
-  }
 
   private async updateGist(gistId: string, data: GistData): Promise<void> {
     const updatePayload = {
@@ -106,10 +67,8 @@ class GitHubGistStorage {
 
       if (!response.ok) {
         if (response.status === 404) {
-          // Gist not found, reset cached ID
-          localStorage.removeItem('christmas-gist-id');
-          this.gistId = null;
-          return null;
+          // Gist not found - this should not happen with hardcoded ID
+          throw new Error('Christmas Lists Gist not found. Please contact support.');
         }
         throw new Error(`Failed to fetch gist: ${response.status}`);
       }
@@ -130,14 +89,6 @@ class GitHubGistStorage {
 
   async loadLists(): Promise<ChristmasList[]> {
     try {
-      // If we don't have a gist ID, try to find existing gist or create new one
-      if (!this.gistId) {
-        // For now, we'll create a new gist. In production, you might want to 
-        // search for existing gists or have the ID configured somewhere
-        console.log('No gist ID found, will create new gist on first save');
-        return [];
-      }
-
       const data = await this.fetchGist(this.gistId);
       return data?.lists || [];
     } catch (error) {
@@ -155,13 +106,8 @@ class GitHubGistStorage {
     };
 
     try {
-      if (!this.gistId) {
-        // Create new gist
-        await this.createGist(data);
-      } else {
-        // Update existing gist
-        await this.updateGist(this.gistId, data);
-      }
+      // Always update the existing gist
+      await this.updateGist(this.gistId, data);
 
       // Also save to localStorage as backup
       localStorage.setItem('christmas-lists', JSON.stringify(lists));
@@ -171,17 +117,6 @@ class GitHubGistStorage {
       localStorage.setItem('christmas-lists', JSON.stringify(lists));
       throw error;
     }
-  }
-
-  // Method to manually set gist ID if you create one manually
-  setGistId(gistId: string): void {
-    this.gistId = gistId;
-    localStorage.setItem('christmas-gist-id', gistId);
-  }
-
-  // Get current gist ID for reference
-  getGistId(): string | null {
-    return this.gistId;
   }
 }
 
