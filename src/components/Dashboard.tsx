@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChristmasList, ChristmasItem, User, USERS } from '../types';
-import { getUserList, createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists } from '../utils/storage';
+import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
 
@@ -15,7 +15,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -39,7 +38,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         console.log('📡 Real-time update received');
       }
       setAllLists(lists);
-      setIsOnline(true); // If we're getting updates, we're online
     });
 
     // Cleanup subscription on unmount
@@ -54,10 +52,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     try {
       const lists = await getAllLists();
       setAllLists(lists);
-      setIsOnline(true);
     } catch (error) {
       console.error('Error loading data:', error);
-      setIsOnline(false);
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +74,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Don't need to call loadData - real-time listener will update automatically
     } catch (error) {
       console.error('Error creating list:', error);
-      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
@@ -127,7 +122,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error deleting item:', error);
-      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
@@ -152,7 +146,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error editing item:', error);
-      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
@@ -183,7 +176,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error reordering items:', error);
-      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
@@ -215,7 +207,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error toggling item check:', error);
-      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
