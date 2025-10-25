@@ -31,11 +31,11 @@ export const USERS: User[] = [
 
 // Password mapping - easily modify individual passwords here
 export const USER_PASSWORDS: { [userId: string]: string } = {
-  'andy': 'oakland',
-  'christopher': 'oakland', 
-  'elena': 'oakland',
-  'lauren': 'oakland',
-  'matthew': 'oakland',
-  'steven': 'oakland',
-  'susan': 'oakland',
+  'andy': 'buddy',
+  'christopher': 'whatthehell', 
+  'elena': 'clarinet',
+  'lauren': 'forgood',
+  'matthew': 'mezcal',
+  'steven': 'rams',
+  'susan': 'nate',
 };
