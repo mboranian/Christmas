@@ -2,15 +2,14 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration - these values are safe to expose in client code
+// Use environment variables when available, fallback to placeholder values
 const firebaseConfig = {
-  // TODO: Replace with your Firebase project config
-  // You can find this in Firebase Console > Project Settings > General > Your apps
-  apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdefghijklmnop"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "your-api-key-here",
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "your-project-id.firebaseapp.com",
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "your-project-id",
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "your-project-id.appspot.com",
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
+  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:123456789:web:abcdefghijklmnop"
 };
 
 // Initialize Firebase
