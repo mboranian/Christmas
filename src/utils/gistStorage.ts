@@ -23,10 +23,6 @@ interface GistResponse {
 class GitHubGistStorage {
   private gistId: string = GIST_ID;
 
-  constructor() {
-    // Use the hardcoded gist ID - no user setup needed
-  }
-
 
 
   private async updateGist(gistId: string, data: GistData): Promise<void> {
