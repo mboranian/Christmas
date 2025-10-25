@@ -21,9 +21,7 @@ export const setCurrentUser = (user: User | null): void => {
 // Lists storage (uses localStorage with Firebase when configured)
 export const getAllLists = async (): Promise<ChristmasList[]> => {
   // Check if Firebase is properly configured
-  const isFirebaseConfigured = process.env.NODE_ENV === 'production' || 
-    (process.env.REACT_APP_FIREBASE_PROJECT_ID && 
-     process.env.REACT_APP_FIREBASE_PROJECT_ID !== 'your-project-id');
+  const isFirebaseConfigured = true; // Firebase is always configured with our hardcoded config
   
   if (isFirebaseConfigured) {
     try {
@@ -47,9 +45,7 @@ export const saveLists = async (lists: ChristmasList[]): Promise<void> => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
   
   // Check if Firebase is properly configured
-  const isFirebaseConfigured = process.env.NODE_ENV === 'production' || 
-    (process.env.REACT_APP_FIREBASE_PROJECT_ID && 
-     process.env.REACT_APP_FIREBASE_PROJECT_ID !== 'your-project-id');
+  const isFirebaseConfigured = true; // Firebase is always configured with our hardcoded config
   
   if (isFirebaseConfigured) {
     try {
@@ -90,9 +86,7 @@ export const createOrUpdateUserList = async (list: ChristmasList): Promise<void>
 // Real-time subscription for lists
 export const subscribeToLists = (callback: (lists: ChristmasList[]) => void) => {
   // Check if Firebase is properly configured
-  const isFirebaseConfigured = process.env.NODE_ENV === 'production' || 
-    (process.env.REACT_APP_FIREBASE_PROJECT_ID && 
-     process.env.REACT_APP_FIREBASE_PROJECT_ID !== 'your-project-id');
+  const isFirebaseConfigured = true; // Firebase is always configured with our hardcoded config
   
   if (isFirebaseConfigured) {
     try {
@@ -117,9 +111,7 @@ export const subscribeToLists = (callback: (lists: ChristmasList[]) => void) => 
 
 export const unsubscribeFromLists = () => {
   // Check if Firebase is properly configured
-  const isFirebaseConfigured = process.env.NODE_ENV === 'production' || 
-    (process.env.REACT_APP_FIREBASE_PROJECT_ID && 
-     process.env.REACT_APP_FIREBASE_PROJECT_ID !== 'your-project-id');
+  const isFirebaseConfigured = true; // Firebase is always configured with our hardcoded config
   
   if (isFirebaseConfigured) {
     try {
