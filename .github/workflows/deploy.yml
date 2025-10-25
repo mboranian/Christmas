@@ -29,8 +29,6 @@ jobs:
 
     - name: Build
       run: npm run build
-      env:
-        REACT_APP_GITHUB_TOKEN: ${{ secrets.CHRISTMAS_GIST_TOKEN }}
 
     - name: Commit and push if changed
       run: |
