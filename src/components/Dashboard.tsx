@@ -21,13 +21,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     loadData();
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadData = async () => {
+  const loadData = () => {
     setIsLoading(true);
     try {
-      const [userList, lists] = await Promise.all([
-        getUserList(currentUser.id),
-        getAllLists()
-      ]);
+      const userList = getUserList(currentUser.id);
+      const lists = getAllLists();
       setCurrentList(userList || null);
       setAllLists(lists);
     } catch (error) {
@@ -37,7 +35,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const createNewList = async () => {
+  const createNewList = () => {
     const newList: ChristmasList = {
       id: generateId(),
       ownerId: currentUser.id,
@@ -48,8 +46,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setCurrentList(newList);
     setIsSyncing(true);
     try {
-      await createOrUpdateUserList(newList);
-      await loadData();
+      createOrUpdateUserList(newList);
+      loadData();
     } catch (error) {
       console.error('Error creating list:', error);
     } finally {
@@ -57,7 +55,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const addItem = async (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
+  const addItem = (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
     if (!currentList) return;
 
     const newItem: ChristmasItem = {
@@ -76,8 +74,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setShowAddForm(false);
     setIsSyncing(true);
     try {
-      await createOrUpdateUserList(updatedList);
-      await loadData();
+      createOrUpdateUserList(updatedList);
+      loadData();
     } catch (error) {
       console.error('Error adding item:', error);
     } finally {
@@ -85,7 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const deleteItem = async (itemId: string) => {
+  const deleteItem = (itemId: string) => {
     if (!currentList) return;
 
     const updatedList = {
@@ -96,8 +94,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setCurrentList(updatedList);
     setIsSyncing(true);
     try {
-      await createOrUpdateUserList(updatedList);
-      await loadData();
+      createOrUpdateUserList(updatedList);
+      loadData();
     } catch (error) {
       console.error('Error deleting item:', error);
     } finally {
@@ -105,10 +103,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
+  const toggleItemCheck = (listOwnerId: string, itemId: string) => {
     setIsSyncing(true);
     try {
-      const lists = await getAllLists();
+      const lists = getAllLists();
       const listIndex = lists.findIndex(list => list.ownerId === listOwnerId);
       
       if (listIndex === -1) return;
@@ -127,8 +125,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         item.checkedBy.push(currentUser.id);
       }
 
-      await createOrUpdateUserList(list);
-      await loadData();
+      createOrUpdateUserList(list);
+      loadData();
     } catch (error) {
       console.error('Error toggling item check:', error);
     } finally {
