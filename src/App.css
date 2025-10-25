@@ -156,11 +156,32 @@ body {
   gap: 20px;
 }
 
+.status-indicators {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
 .sync-indicator {
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   opacity: 0.9;
   animation: pulse 2s infinite;
+}
+
+.connection-indicator {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.connection-indicator.online {
+  color: #4CAF50;
+}
+
+.connection-indicator.offline {
+  color: #f44336;
+  animation: blink 1s infinite;
 }
 
 @keyframes pulse {
@@ -169,6 +190,15 @@ body {
   }
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0.4;
   }
 }
 

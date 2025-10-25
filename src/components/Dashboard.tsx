@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChristmasList, ChristmasItem, User, USERS } from '../types';
-import { getUserList, createOrUpdateUserList, generateId, getAllLists } from '../utils/storage';
+import { getUserList, createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
 
@@ -16,26 +16,47 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [activeTab, setActiveTab] = useState<'my-list' | 'all-lists'>('my-list');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
     loadData();
+    
+    // Set up real-time listener
+    const unsubscribe = subscribeToLists((lists) => {
+      console.log('📡 Real-time update received');
+      setAllLists(lists);
+      // Update current user's list if it changed
+      const userList = lists.find(list => list.ownerId === currentUser.id);
+      setCurrentList(userList || null);
+      setIsOnline(true); // If we're getting updates, we're online
+    });
+
+    // Cleanup subscription on unmount
+    return () => {
+      unsubscribe();
+      unsubscribeFromLists();
+    };
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadData = () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const userList = getUserList(currentUser.id);
-      const lists = getAllLists();
+      const [userList, lists] = await Promise.all([
+        getUserList(currentUser.id),
+        getAllLists()
+      ]);
       setCurrentList(userList || null);
       setAllLists(lists);
+      setIsOnline(true);
     } catch (error) {
       console.error('Error loading data:', error);
+      setIsOnline(false);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const createNewList = () => {
+  const createNewList = async () => {
     const newList: ChristmasList = {
       id: generateId(),
       ownerId: currentUser.id,
@@ -46,16 +67,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setCurrentList(newList);
     setIsSyncing(true);
     try {
-      createOrUpdateUserList(newList);
-      loadData();
+      await createOrUpdateUserList(newList);
+      // Don't need to call loadData - real-time listener will update automatically
     } catch (error) {
       console.error('Error creating list:', error);
+      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const addItem = (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
+  const addItem = async (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
     if (!currentList) return;
 
     const newItem: ChristmasItem = {
@@ -74,8 +96,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setShowAddForm(false);
     setIsSyncing(true);
     try {
-      createOrUpdateUserList(updatedList);
-      loadData();
+      await createOrUpdateUserList(updatedList);
+      // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error adding item:', error);
     } finally {
@@ -83,7 +105,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const deleteItem = (itemId: string) => {
+  const deleteItem = async (itemId: string) => {
     if (!currentList) return;
 
     const updatedList = {
@@ -94,19 +116,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setCurrentList(updatedList);
     setIsSyncing(true);
     try {
-      createOrUpdateUserList(updatedList);
-      loadData();
+      await createOrUpdateUserList(updatedList);
+      // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error deleting item:', error);
+      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const toggleItemCheck = (listOwnerId: string, itemId: string) => {
+  const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
     setIsSyncing(true);
     try {
-      const lists = getAllLists();
+      const lists = await getAllLists();
       const listIndex = lists.findIndex(list => list.ownerId === listOwnerId);
       
       if (listIndex === -1) return;
@@ -125,10 +148,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         item.checkedBy.push(currentUser.id);
       }
 
-      createOrUpdateUserList(list);
-      loadData();
+      await createOrUpdateUserList(list);
+      // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error toggling item check:', error);
+      setIsOnline(false);
     } finally {
       setIsSyncing(false);
     }
@@ -158,7 +182,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         <h1>🎄 Christmas List Manager</h1>
         <div className="user-info">
           <span>Welcome, {currentUser.name}!</span>
-          {isSyncing && <span className="sync-indicator">🔄 Syncing...</span>}
+          <div className="status-indicators">
+            {isSyncing && <span className="sync-indicator">🔄 Syncing...</span>}
+            <span className={`connection-indicator ${isOnline ? 'online' : 'offline'}`}>
+              {isOnline ? '🌐 Online' : '📴 Offline'}
+            </span>
+          </div>
           <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
         </div>
       </header>
