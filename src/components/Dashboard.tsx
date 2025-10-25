@@ -10,13 +10,24 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
-  const [currentList, setCurrentList] = useState<ChristmasList | null>(null);
   const [allLists, setAllLists] = useState<ChristmasList[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'my-list' | 'all-lists'>('my-list');
+  const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Helper to get the currently selected list
+  const getSelectedList = () => {
+    return allLists.find(list => list.ownerId === selectedUserId) || null;
+  };
+
+  // Helper to get the selected user
+  const getSelectedUser = () => {
+    return USERS.find(user => user.id === selectedUserId) || currentUser;
+  };
 
   useEffect(() => {
     loadData();
@@ -28,9 +39,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         console.log('📡 Real-time update received');
       }
       setAllLists(lists);
-      // Update current user's list if it changed
-      const userList = lists.find(list => list.ownerId === currentUser.id);
-      setCurrentList(userList || null);
       setIsOnline(true); // If we're getting updates, we're online
     });
 
@@ -44,11 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [userList, lists] = await Promise.all([
-        getUserList(currentUser.id),
-        getAllLists()
-      ]);
-      setCurrentList(userList || null);
+      const lists = await getAllLists();
       setAllLists(lists);
       setIsOnline(true);
     } catch (error) {
@@ -67,7 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       items: [],
       createdAt: Date.now(),
     };
-    setCurrentList(newList);
+
     setIsSyncing(true);
     try {
       await createOrUpdateUserList(newList);
@@ -81,7 +85,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   };
 
   const addItem = async (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
-    if (!currentList) return;
+    const currentList = getSelectedList();
+    if (!currentList || selectedUserId !== currentUser.id) return;
 
     const newItem: ChristmasItem = {
       ...itemData,
@@ -95,7 +100,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       items: [...currentList.items, newItem],
     };
 
-    setCurrentList(updatedList);
     setShowAddForm(false);
     setIsSyncing(true);
     try {
@@ -109,14 +113,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   };
 
   const deleteItem = async (itemId: string) => {
-    if (!currentList) return;
+    const currentList = getSelectedList();
+    if (!currentList || selectedUserId !== currentUser.id) return;
 
     const updatedList = {
       ...currentList,
-      items: currentList.items.filter(item => item.id !== itemId),
+      items: currentList.items.filter((item: ChristmasItem) => item.id !== itemId),
     };
 
-    setCurrentList(updatedList);
     setIsSyncing(true);
     try {
       await createOrUpdateUserList(updatedList);
@@ -130,24 +134,55 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   };
 
   const editItem = async (itemId: string, updatedData: { title: string; link?: string }) => {
-    if (!currentList) return;
+    const currentList = getSelectedList();
+    if (!currentList || selectedUserId !== currentUser.id) return;
 
     const updatedList = {
       ...currentList,
-      items: currentList.items.map(item => 
+      items: currentList.items.map((item: ChristmasItem) => 
         item.id === itemId 
           ? { ...item, ...updatedData }
           : item
       ),
     };
 
-    setCurrentList(updatedList);
     setIsSyncing(true);
     try {
       await createOrUpdateUserList(updatedList);
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error editing item:', error);
+      setIsOnline(false);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const reorderItem = async (draggedId: string, targetId: string) => {
+    const currentList = getSelectedList();
+    if (!currentList || selectedUserId !== currentUser.id) return;
+
+    const items = [...currentList.items];
+    const draggedIndex = items.findIndex(item => item.id === draggedId);
+    const targetIndex = items.findIndex(item => item.id === targetId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Remove dragged item and insert at target position
+    const [draggedItem] = items.splice(draggedIndex, 1);
+    items.splice(targetIndex, 0, draggedItem);
+
+    const updatedList = {
+      ...currentList,
+      items,
+    };
+
+    setIsSyncing(true);
+    try {
+      await createOrUpdateUserList(updatedList);
+      // Real-time listener will update the UI automatically
+    } catch (error) {
+      console.error('Error reordering items:', error);
       setIsOnline(false);
     } finally {
       setIsSyncing(false);
@@ -190,9 +225,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <h1>🎄 Christmas List Manager</h1>
+          <h1>🎄 Christmas Lists! 🎄</h1>
           <div className="user-info">
-            <span>Welcome, {currentUser.name}!</span>
+            <span>Merry Christmas, {currentUser.name}!</span>
             <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
           </div>
         </header>
@@ -207,131 +242,141 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>🎄 Christmas List Manager</h1>
+        <button 
+          className="mobile-menu-toggle"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          aria-label="Toggle menu"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <h1>🎄 Christmas Lists! 🎄</h1>
         <div className="user-info">
-          <span>Welcome, {currentUser.name}!</span>
+          <span>Merry Christmas, {currentUser.name}!</span>
           <div className="status-indicators">
             {isSyncing && <span className="sync-indicator">🔄 Syncing...</span>}
-            <span className={`connection-indicator ${isOnline ? 'online' : 'offline'}`}>
-              {isOnline ? '🌐 Online' : '📴 Offline'}
-            </span>
           </div>
           <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
         </div>
       </header>
 
-      <nav className="dashboard-nav">
-        <button 
-          className={`nav-tab ${activeTab === 'my-list' ? 'active' : ''}`}
-          onClick={() => setActiveTab('my-list')}
-        >
-          My List
-        </button>
-        <button 
-          className={`nav-tab ${activeTab === 'all-lists' ? 'active' : ''}`}
-          onClick={() => setActiveTab('all-lists')}
-        >
-          Everyone's Lists
-        </button>
-      </nav>
+      <div className="dashboard-layout">
+        {/* Mobile backdrop */}
+        {isMobileMenuOpen && (
+          <div 
+            className="mobile-backdrop" 
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+        
+        <aside className={`sidebar ${isMobileMenuOpen ? 'sidebar-mobile-open' : ''}`}>
+          <nav className="sidebar-nav">
+            <h3>All Lists</h3>
+            {[currentUser, ...USERS.filter(user => user.id !== currentUser.id)].map(user => (
+              <button 
+                key={user.id}
+                className={`sidebar-tab ${selectedUserId === user.id ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedUserId(user.id);
+                  setIsReorderMode(false);
+                  setShowAddForm(false);
+                  setIsMobileMenuOpen(false); // Close mobile menu after selection
+                }}
+              >
+                {user.name === currentUser.name ? '👤 My List' : `🎁 ${user.name}`}
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-      <main className="dashboard-content">
-        {activeTab === 'my-list' && (
-          <div className="my-list-section">
-            <div className="section-header">
-              <h2>My Christmas List</h2>
-              {currentList && (
-                <button 
-                  onClick={() => setShowAddForm(true)} 
-                  className="add-item-button"
-                  disabled={showAddForm || isSyncing}
-                >
-                  + Add Item
-                </button>
-              )}
-            </div>
+        <main className="main-content">
+          {(() => {
+            const selectedUser = getSelectedUser();
+            const selectedList = getSelectedList();
+            const isOwner = selectedUserId === currentUser.id;
 
-            {!currentList ? (
-              <div className="empty-state">
-                <p>You haven't created your Christmas list yet!</p>
-                <button 
-                  onClick={createNewList} 
-                  className="create-list-button"
-                  disabled={isSyncing}
-                >
-                  Create My List
-                </button>
-              </div>
-            ) : (
-              <>
-                {showAddForm && (
-                  <div className="add-item-section">
-                    <h3>Add New Item</h3>
-                    <AddItemForm 
-                      onAddItem={addItem}
-                      onCancel={() => setShowAddForm(false)}
-                    />
-                  </div>
-                )}
-
-                <div className="items-list">
-                  {currentList.items.length === 0 ? (
-                    <p className="no-items">No items in your list yet. Add some above!</p>
-                  ) : (
-                    currentList.items.map(item => (
-                      <ChristmasItemComponent
-                        key={item.id}
-                        item={item}
-                        isOwner={true}
-                        currentUser={currentUser}
-                        onToggleCheck={() => {}} // Owner can't check their own items
-                        onDeleteItem={deleteItem}
-                        onEditItem={editItem}
-                      />
-                    ))
+            return (
+              <div className="list-section">
+                <div className="section-header">
+                  <h2>{selectedUser.name === currentUser.name ? 'My Christmas List' : `${selectedUser.name}'s List`}</h2>
+                  {isOwner && selectedList && (
+                    <div className="header-buttons">
+                      <button 
+                        onClick={() => setShowAddForm(true)} 
+                        className="add-item-button"
+                        disabled={showAddForm || isSyncing || isReorderMode}
+                      >
+                        + Add Item
+                      </button>
+                      <button 
+                        onClick={() => setIsReorderMode(!isReorderMode)} 
+                        className={`reorder-button ${isReorderMode ? 'active' : ''}`}
+                        disabled={showAddForm || isSyncing || !selectedList?.items?.length || selectedList.items.length < 2}
+                      >
+                        {isReorderMode ? '✓ Done' : '⇅ Change Order'}
+                      </button>
+                    </div>
                   )}
                 </div>
-              </>
-            )}
-          </div>
-        )}
 
-        {activeTab === 'all-lists' && (
-          <div className="all-lists-section">
-            <h2>Everyone's Christmas Lists</h2>
-            {allLists.filter(list => list.ownerId !== currentUser.id).length === 0 ? (
-              <p className="no-lists">No other users have created lists yet.</p>
-            ) : (
-              <div className="users-lists">
-                {USERS.filter(user => user.id !== currentUser.id).map(user => {
-                  const userList = allLists.find(list => list.ownerId === user.id);
-                  
-                  return (
-                    <div key={user.id} className="user-list-section">
-                      <h3>{user.name}'s List</h3>
-                      {!userList || userList.items.length === 0 ? (
-                        <p className="no-items">{user.name} hasn't added any items yet.</p>
+                {!selectedList && isOwner ? (
+                  <div className="empty-state">
+                    <p>You haven't created your Christmas list yet!</p>
+                    <button 
+                      onClick={createNewList} 
+                      className="create-list-button"
+                      disabled={isSyncing}
+                    >
+                      Create My List
+                    </button>
+                  </div>
+                ) : !selectedList ? (
+                  <div className="empty-state">
+                    <p>{selectedUser.name} hasn't created their Christmas list yet.</p>
+                  </div>
+                ) : (
+                  <>
+                    {showAddForm && isOwner && (
+                      <div className="add-item-section">
+                        <h3>Add New Item</h3>
+                        <AddItemForm 
+                          onAddItem={addItem}
+                          onCancel={() => setShowAddForm(false)}
+                        />
+                      </div>
+                    )}
+
+                    <div className="items-list">
+                      {selectedList.items.length === 0 ? (
+                        <p className="no-items">{isOwner ? 'No items in your list yet. Add some above!' : `${selectedUser.name} hasn't added any items yet.`}</p>
                       ) : (
-                        <div className="items-list">
-                          {userList.items.map(item => (
-                            <ChristmasItemComponent
-                              key={item.id}
-                              item={item}
-                              isOwner={false}
-                              currentUser={currentUser}
-                              onToggleCheck={(itemId) => toggleItemCheck(user.id, itemId)}
-                            />
-                          ))}
-                        </div>
+                        selectedList.items.map((item: ChristmasItem, index: number) => (
+                          <ChristmasItemComponent
+                            key={item.id}
+                            item={item}
+                            isOwner={isOwner}
+                            currentUser={currentUser}
+                            listOwner={selectedUser}
+                            onToggleCheck={isOwner ? () => {} : (itemId) => toggleItemCheck(selectedUserId, itemId)}
+                            onDeleteItem={isOwner ? deleteItem : undefined}
+                            onEditItem={isOwner ? editItem : undefined}
+                            onReorderItem={isOwner ? reorderItem : undefined}
+                            itemIndex={index}
+                            isReorderMode={isReorderMode}
+                          />
+                        ))
                       )}
                     </div>
-                  );
-                })}
+                  </>
+                )}
               </div>
-            )}
-          </div>
-        )}
-      </main>
+            );
+          })()}
+        </main>
+      </div>
     </div>
   );
 };
