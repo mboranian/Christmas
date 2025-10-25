@@ -13,10 +13,17 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onAddItem, onCancel }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (title.trim()) {
-      onAddItem({
+      const itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'> = {
         title: title.trim(),
-        link: link.trim() || undefined,
-      });
+      };
+      
+      // Only include link if it has a value (Firebase doesn't allow undefined)
+      const trimmedLink = link.trim();
+      if (trimmedLink) {
+        itemData.link = trimmedLink;
+      }
+      
+      onAddItem(itemData);
       setTitle('');
       setLink('');
     }
