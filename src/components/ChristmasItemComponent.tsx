@@ -42,7 +42,23 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside and handle positioning
+  // Smart dropdown positioning - check if there's space below, if not position above
+  useEffect(() => {
+    if (showDropdown && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      
+      // If not enough space below (120px for dropdown content) and more space above
+      if (spaceBelow < 120 && spaceAbove > spaceBelow) {
+        setDropdownDirection('up');
+      } else {
+        setDropdownDirection('down');
+      }
+    }
+  }, [showDropdown]);
+
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -52,20 +68,6 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
 
     if (showDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
-      
-      // Check if dropdown should open upward
-      if (dropdownRef.current) {
-        const rect = dropdownRef.current.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        
-        // If there's less than 120px below and more space above, open upward
-        if (spaceBelow < 120 && spaceAbove > spaceBelow) {
-          setDropdownDirection('up');
-        } else {
-          setDropdownDirection('down');
-        }
-      }
     }
 
     return () => {
@@ -231,7 +233,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                       </svg>
                     </button>
                     {showDropdown && (
-                      <div className={`dropdown-content ${dropdownDirection === 'up' ? 'dropdown-up' : 'dropdown-down'}`}>
+                      <div className={`dropdown-content dropdown-${dropdownDirection}`}>
                         {onEditItem && (
                           <button 
                             onClick={() => {
