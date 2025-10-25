@@ -17,20 +17,33 @@ export class FirebaseStorage {
   private unsubscribe: Unsubscribe | null = null;
   private lastSavedData: string | null = null;
   private isSaving = false;
+  private saveQueue: ChristmasList[] | null = null;
 
   /**
    * Save all lists to Firestore (with deduplication to prevent loops)
    */
   async saveLists(lists: ChristmasList[]): Promise<void> {
-    // Prevent saving if already in progress
+    const currentData = JSON.stringify(lists);
+    
+    // If already saving, queue this data for next save
     if (this.isSaving) {
+      this.saveQueue = lists;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⏳ Save in progress, queuing data...');
+      }
       return;
     }
 
     // Check if data actually changed to prevent unnecessary saves
-    const currentData = JSON.stringify(lists);
     if (this.lastSavedData === currentData) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Skipping save - data unchanged');
+      }
       return;
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('💾 Saving new data to Firebase...');
     }
 
     this.isSaving = true;
@@ -45,11 +58,21 @@ export class FirebaseStorage {
       if (process.env.NODE_ENV === 'development') {
         console.log('✅ Successfully saved lists to Firebase');
       }
+      
+      // If there's queued data that's different, save it
+      if (this.saveQueue && JSON.stringify(this.saveQueue) !== currentData) {
+        const queuedLists = this.saveQueue;
+        this.saveQueue = null;
+        this.isSaving = false; // Reset flag before recursive call
+        await this.saveLists(queuedLists);
+        return;
+      }
     } catch (error) {
       console.error('❌ Error saving lists to Firebase:', error);
       throw error;
     } finally {
       this.isSaving = false;
+      this.saveQueue = null;
     }
   }
 
