@@ -3,13 +3,14 @@ import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration - these values are safe to expose in client code
 // Use environment variables when available, fallback to placeholder values
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "your-api-key-here",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "your-project-id.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "your-project-id",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "your-project-id.appspot.com",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:123456789:web:abcdefghijklmnop"
+  apiKey: "AIzaSyDed-33aRv4_lYXacSCZH4pBnraydYdQF0",
+  authDomain: "christmas-lists-41c76.firebaseapp.com",
+  projectId: "christmas-lists-41c76",
+  storageBucket: "christmas-lists-41c76.firebasestorage.app",
+  messagingSenderId: "689772967477",
+  appId: "1:689772967477:web:9be37974b2533beeb5a37c"
 };
 
 // Initialize Firebase
