@@ -1266,7 +1266,7 @@ body {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 998;
+  z-index: 997;
 }
 
 /* Mobile sidebar styles */
@@ -1289,7 +1289,7 @@ body {
     left: -250px; /* Hidden by default */
     width: 250px;
     height: calc(100vh - 80px);
-    z-index: 999;
+    z-index: 1000;
     transition: left 0.3s ease;
     background: #f8f9fa;
     box-shadow: 2px 0 20px rgba(0, 0, 0, 0.1);
