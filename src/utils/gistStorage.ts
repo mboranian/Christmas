@@ -38,47 +38,48 @@ class GitHubGistStorage {
       }
     };
 
-    // Note: For now, we'll skip the actual Gist update due to CORS and auth issues
-    // The data is still saved to localStorage as a fallback
-    console.log('Would update Gist with:', data);
+    const token = process.env.REACT_APP_GITHUB_TOKEN;
     
-    // TODO: Implement proper authentication or use a backend proxy
-    // Uncomment when you add a GitHub token or backend:
-    /*
+    if (!token) {
+      console.warn('No GitHub token found. Skipping Gist update, using localStorage only.');
+      return;
+    }
+
     try {
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Christmas-Lists-App',
-          'Authorization': 'token YOUR_GITHUB_TOKEN' // Add your token here
+          'Authorization': `token ${token}`
         },
         body: JSON.stringify(updatePayload)
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update gist: ${response.status}`);
+        throw new Error(`Failed to update gist: ${response.status} ${response.statusText}`);
       }
+      
+      console.log('✅ Successfully updated Gist');
     } catch (error) {
-      console.error('Error updating gist:', error);
+      console.error('❌ Error updating gist:', error);
       throw error;
     }
-    */
   }
 
   private async fetchGist(gistId: string): Promise<GistData | null> {
-    // Note: Skipping Gist fetch for now due to CORS/rate limit issues
-    console.log('Would fetch from Gist ID:', gistId);
-    return null;
+    const token = process.env.REACT_APP_GITHUB_TOKEN;
     
-    // TODO: Implement proper authentication or use a backend proxy  
-    // Uncomment when you add a GitHub token or backend:
-    /*
+    if (!token) {
+      console.warn('No GitHub token found. Skipping Gist fetch, using localStorage only.');
+      return null;
+    }
+
     try {
       const response = await fetch(`https://api.github.com/gists/${gistId}`, {
         headers: {
           'User-Agent': 'Christmas-Lists-App',
-          'Authorization': 'token YOUR_GITHUB_TOKEN' // Add your token here
+          'Authorization': `token ${token}`
         }
       });
 
@@ -86,7 +87,7 @@ class GitHubGistStorage {
         if (response.status === 404) {
           throw new Error('Christmas Lists Gist not found. Please contact support.');
         }
-        throw new Error(`Failed to fetch gist: ${response.status}`);
+        throw new Error(`Failed to fetch gist: ${response.status} ${response.statusText}`);
       }
 
       const gist: GistResponse = await response.json();
@@ -96,12 +97,12 @@ class GitHubGistStorage {
         throw new Error('Christmas lists file not found in gist');
       }
 
+      console.log('✅ Successfully fetched from Gist');
       return JSON.parse(file.content);
     } catch (error) {
-      console.error('Error fetching gist:', error);
+      console.error('❌ Error fetching gist:', error);
       return null;
     }
-    */
   }
 
   async loadLists(): Promise<ChristmasList[]> {
