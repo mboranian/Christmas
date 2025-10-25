@@ -28,3 +28,14 @@ export const USERS: User[] = [
   { id: 'steven', name: 'Steven' },
   { id: 'susan', name: 'Susan' },
 ];
+
+// Password mapping - easily modify individual passwords here
+export const USER_PASSWORDS: { [userId: string]: string } = {
+  'andy': 'oakland',
+  'christopher': 'oakland', 
+  'elena': 'oakland',
+  'lauren': 'oakland',
+  'matthew': 'oakland',
+  'steven': 'oakland',
+  'susan': 'oakland',
+};

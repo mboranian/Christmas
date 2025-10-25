@@ -36,6 +36,18 @@ function App() {
 
   return (
     <div className="App">
+      {/* Falling Snow Animation */}
+      <div className="snowflake">❄</div>
+      <div className="snowflake">❅</div>
+      <div className="snowflake">❆</div>
+      <div className="snowflake">❄</div>
+      <div className="snowflake">❅</div>
+      <div className="snowflake">❆</div>
+      <div className="snowflake">❄</div>
+      <div className="snowflake">❅</div>
+      <div className="snowflake">❆</div>
+      <div className="snowflake">❄</div>
+      
       {currentUser ? (
         <Dashboard currentUser={currentUser} onSignOut={handleSignOut} />
       ) : (

@@ -129,6 +129,31 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
+  const editItem = async (itemId: string, updatedData: { title: string; link?: string }) => {
+    if (!currentList) return;
+
+    const updatedList = {
+      ...currentList,
+      items: currentList.items.map(item => 
+        item.id === itemId 
+          ? { ...item, ...updatedData }
+          : item
+      ),
+    };
+
+    setCurrentList(updatedList);
+    setIsSyncing(true);
+    try {
+      await createOrUpdateUserList(updatedList);
+      // Real-time listener will update the UI automatically
+    } catch (error) {
+      console.error('Error editing item:', error);
+      setIsOnline(false);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
     setIsSyncing(true);
     try {
@@ -261,6 +286,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                         currentUser={currentUser}
                         onToggleCheck={() => {}} // Owner can't check their own items
                         onDeleteItem={deleteItem}
+                        onEditItem={editItem}
                       />
                     ))
                   )}
