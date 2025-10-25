@@ -1295,8 +1295,8 @@ body {
     box-shadow: 2px 0 20px rgba(0, 0, 0, 0.1);
   }
 
-  .sidebar-mobile-open {
-    left: 0; /* Slide in when open */
+  .sidebar.sidebar-mobile-open {
+    left: 0 !important; /* Slide in when open */
   }
 
   .main-content {
@@ -1356,6 +1356,10 @@ body {
   .sidebar {
     width: 220px;
     left: -220px;
+  }
+
+  .sidebar.sidebar-mobile-open {
+    left: 0 !important;
   }
 
   .main-content {
