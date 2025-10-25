@@ -15,20 +15,41 @@ const LISTS_DOCUMENT = 'all-lists';
 
 export class FirebaseStorage {
   private unsubscribe: Unsubscribe | null = null;
+  private lastSavedData: string | null = null;
+  private isSaving = false;
 
   /**
-   * Save all lists to Firestore
+   * Save all lists to Firestore (with deduplication to prevent loops)
    */
   async saveLists(lists: ChristmasList[]): Promise<void> {
+    // Prevent saving if already in progress
+    if (this.isSaving) {
+      return;
+    }
+
+    // Check if data actually changed to prevent unnecessary saves
+    const currentData = JSON.stringify(lists);
+    if (this.lastSavedData === currentData) {
+      return;
+    }
+
+    this.isSaving = true;
     try {
       await setDoc(doc(db, LISTS_COLLECTION, LISTS_DOCUMENT), {
         lists,
         lastUpdated: Date.now()
       });
-      console.log('✅ Successfully saved lists to Firebase');
+      this.lastSavedData = currentData;
+      
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Successfully saved lists to Firebase');
+      }
     } catch (error) {
       console.error('❌ Error saving lists to Firebase:', error);
       throw error;
+    } finally {
+      this.isSaving = false;
     }
   }
 
@@ -42,10 +63,16 @@ export class FirebaseStorage {
       
       if (docSnap.exists()) {
         const data = docSnap.data();
-        console.log('✅ Successfully fetched lists from Firebase');
+        
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Successfully fetched lists from Firebase');
+        }
         return data.lists || [];
       } else {
-        console.log('📝 No lists found in Firebase, starting fresh');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📝 No lists found in Firebase, starting fresh');
+        }
         return [];
       }
     } catch (error) {
@@ -58,15 +85,33 @@ export class FirebaseStorage {
    * Subscribe to real-time updates for all lists
    */
   subscribeToLists(callback: (lists: ChristmasList[]) => void): Unsubscribe {
+    // Prevent multiple subscriptions
+    if (this.unsubscribe) {
+      this.unsubscribe();
+    }
+
     const docRef = doc(db, LISTS_COLLECTION, LISTS_DOCUMENT);
+    let lastReceivedData: string | null = null;
     
     this.unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        console.log('🔄 Real-time update received from Firebase');
-        callback(data.lists || []);
+        const currentData = JSON.stringify(data.lists || []);
+        
+        // Only trigger callback if data actually changed
+        if (lastReceivedData !== currentData) {
+          lastReceivedData = currentData;
+          
+          // Only log in development and throttle logs
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔄 Real-time update received from Firebase');
+          }
+          callback(data.lists || []);
+        }
       } else {
-        console.log('📝 No document exists, starting with empty lists');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📝 No document exists, starting with empty lists');
+        }
         callback([]);
       }
     }, (error) => {
@@ -84,7 +129,11 @@ export class FirebaseStorage {
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
-      console.log('🔕 Unsubscribed from Firebase real-time updates');
+      
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔕 Unsubscribed from Firebase real-time updates');
+      }
     }
   }
 

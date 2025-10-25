@@ -23,7 +23,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     
     // Set up real-time listener
     const unsubscribe = subscribeToLists((lists) => {
-      console.log('📡 Real-time update received');
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📡 Real-time update received');
+      }
       setAllLists(lists);
       // Update current user's list if it changed
       const userList = lists.find(list => list.ownerId === currentUser.id);

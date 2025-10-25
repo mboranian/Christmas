@@ -55,12 +55,16 @@ export const saveLists = async (lists: ChristmasList[]): Promise<void> => {
     try {
       // Then save to Firebase for sync
       await firebaseStorage.saveLists(lists);
-      console.log('✅ Saved to both localStorage and Firebase');
+      
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Saved to both localStorage and Firebase');
+      }
     } catch (error) {
       console.warn('⚠️ Firebase save failed, but localStorage saved:', error);
       // Don't throw - localStorage worked, so app continues functioning
     }
-  } else {
+  } else if (process.env.NODE_ENV === 'development') {
     console.log('📝 Using localStorage only (Firebase not configured yet)');
   }
 };
