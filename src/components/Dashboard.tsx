@@ -356,6 +356,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                             onEditItem={isOwner ? editItem : undefined}
                             onReorderItem={isOwner ? reorderItem : undefined}
                             itemIndex={index}
+                            totalItems={selectedList.items.length}
                             isReorderMode={isReorderMode}
                           />
                         ))

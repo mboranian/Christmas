@@ -11,6 +11,7 @@ interface ChristmasItemComponentProps {
   onEditItem?: (itemId: string, updatedData: { title: string; link?: string }) => void;
   onReorderItem?: (draggedId: string, targetId: string) => void;
   itemIndex: number;
+  totalItems: number;
   isReorderMode?: boolean;
 }
 
@@ -24,6 +25,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   onEditItem,
   onReorderItem,
   itemIndex,
+  totalItems,
   isReorderMode = false
 }) => {
   const isCheckedByCurrentUser = item.checkedBy.includes(currentUser.id);
@@ -41,22 +43,21 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Smart dropdown positioning - check if there's space below, if not position above
+  // Smart dropdown positioning - if this is the last item, position dropdown above
   useEffect(() => {
-    if (showDropdown && dropdownRef.current) {
-      const rect = dropdownRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
+    if (showDropdown) {
+      const isLastItem = itemIndex === totalItems - 1;
       
-      // If not enough space below (120px for dropdown content) and more space above
-      if (spaceBelow < 120 && spaceAbove > spaceBelow) {
+      // If this is the last item in the list, position dropdown above
+      if (isLastItem) {
         setDropdownDirection('up');
       } else {
         setDropdownDirection('down');
       }
     }
-  }, [showDropdown]);
+  }, [showDropdown, itemIndex, totalItems]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -222,6 +223,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                 {isOwner && (onEditItem || onDeleteItem) && !isReorderMode && (
                   <div className="dropdown-menu" ref={dropdownRef}>
                     <button 
+                      ref={buttonRef}
                       onClick={() => setShowDropdown(!showDropdown)}
                       className="menu-button"
                       title="More options"
