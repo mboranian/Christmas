@@ -23,8 +23,12 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Build to docs folder
-      run: npm run build
+    - name: Build
+        run: |
+          npm ci
+          npm run build
+        env:
+          REACT_APP_GITHUB_TOKEN: ${{ secrets.CHRISTMAS_GIST_TOKEN }}
 
     - name: Commit and push if changed
       run: |
