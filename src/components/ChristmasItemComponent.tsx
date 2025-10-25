@@ -39,9 +39,10 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   
   // Dropdown menu state
   const [showDropdown, setShowDropdown] = useState(false);
+  const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside and handle positioning
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -51,6 +52,20 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
 
     if (showDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
+      
+      // Check if dropdown should open upward
+      if (dropdownRef.current) {
+        const rect = dropdownRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        
+        // If there's less than 120px below and more space above, open upward
+        if (spaceBelow < 120 && spaceAbove > spaceBelow) {
+          setDropdownDirection('up');
+        } else {
+          setDropdownDirection('down');
+        }
+      }
     }
 
     return () => {
@@ -216,7 +231,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                       </svg>
                     </button>
                     {showDropdown && (
-                      <div className="dropdown-content">
+                      <div className={`dropdown-content ${dropdownDirection === 'up' ? 'dropdown-up' : 'dropdown-down'}`}>
                         {onEditItem && (
                           <button 
                             onClick={() => {
