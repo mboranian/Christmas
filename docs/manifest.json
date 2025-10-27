@@ -1,0 +1,25 @@
+{
+  "short_name": "Christmas Lists",
+  "name": "780 Christmas Lists - Manage your Christmas gift lists",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192"
+    },
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1e5631",
+  "background_color": "#2d8f47"
+}
