@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChristmasItem, User, USERS } from '../types';
 
 interface ChristmasItemComponentProps {
@@ -39,30 +40,55 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   // Drag state
   const [isDragOver, setIsDragOver] = useState(false);
   
-  // Dropdown menu state
+  // Dropdown menu state (portal + fixed positioning so it sits above everything)
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down');
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number } | null>(null);
 
-  // Smart dropdown positioning - if this is the last item, position dropdown above
-  useEffect(() => {
-    if (showDropdown) {
-      const isLastItem = itemIndex === totalItems - 1;
-      
-      // If this is the last item in the list, position dropdown above
-      if (isLastItem) {
-        setDropdownDirection('up');
-      } else {
-        setDropdownDirection('down');
-      }
+  // When opening the dropdown compute an initial position based on the menu button
+  useLayoutEffect(() => {
+    if (showDropdown && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      // initial placement: below the button, right-aligned to the button
+      const estimatedWidth = 160; // reasonable default for clamping
+      let left = rect.right - estimatedWidth;
+      left = Math.min(Math.max(left, 8), window.innerWidth - estimatedWidth - 8);
+      const top = rect.bottom + 6;
+      setDropdownPos({ left, top });
     }
-  }, [showDropdown, itemIndex, totalItems]);
+  }, [showDropdown]);
 
-  // Close dropdown when clicking outside
+  // After the menu renders, measure it and adjust for viewport fit (flip up if needed)
+  useEffect(() => {
+    if (showDropdown && buttonRef.current && menuRef.current) {
+      const btnRect = buttonRef.current.getBoundingClientRect();
+      const menuRect = menuRef.current.getBoundingClientRect();
+
+      let direction: 'down' | 'up' = 'down';
+      let top = btnRect.bottom + 6;
+      if (btnRect.bottom + menuRect.height + 6 > window.innerHeight) {
+        direction = 'up';
+        top = btnRect.top - menuRect.height - 6;
+      }
+
+      let left = btnRect.right - menuRect.width;
+      left = Math.min(Math.max(left, 8), window.innerWidth - menuRect.width - 8);
+
+      setDropdownDirection(direction);
+      setDropdownPos({ left, top });
+    }
+  }, [showDropdown]);
+
+  // Close dropdown when clicking outside (consider both the button and the menu rendered in the portal)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        menuRef.current && !menuRef.current.contains(target) &&
+        buttonRef.current && !buttonRef.current.contains(target)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -73,6 +99,37 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
+
+  // Reposition on scroll/resize to keep the dropdown anchored to the button
+  useEffect(() => {
+    const reposition = () => {
+      if (showDropdown && buttonRef.current && menuRef.current) {
+        const btnRect = buttonRef.current.getBoundingClientRect();
+        const menuRect = menuRef.current.getBoundingClientRect();
+
+        let direction: 'down' | 'up' = 'down';
+        let top = btnRect.bottom + 6;
+        if (btnRect.bottom + menuRect.height + 6 > window.innerHeight) {
+          direction = 'up';
+          top = btnRect.top - menuRect.height - 6;
+        }
+
+        let left = btnRect.right - menuRect.width;
+        left = Math.min(Math.max(left, 8), window.innerWidth - menuRect.width - 8);
+
+        setDropdownDirection(direction);
+        setDropdownPos({ left, top });
+      }
+    };
+
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
     };
   }, [showDropdown]);
 
@@ -221,7 +278,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                   </a>
                 )}
                 {isOwner && (onEditItem || onDeleteItem) && !isReorderMode && (
-                  <div className="dropdown-menu" ref={dropdownRef}>
+                  <div className="dropdown-menu">
                     <button 
                       ref={buttonRef}
                       onClick={() => setShowDropdown(!showDropdown)}
@@ -234,8 +291,12 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                         <circle cx="12" cy="19" r="1"></circle>
                       </svg>
                     </button>
-                    {showDropdown && (
-                      <div className={`dropdown-content dropdown-${dropdownDirection}`}>
+                    {showDropdown && dropdownPos && createPortal(
+                      <div
+                        ref={menuRef}
+                        className={`dropdown-content dropdown-${dropdownDirection} dropdown-portal`}
+                        style={{ left: dropdownPos.left, top: dropdownPos.top }}
+                      >
                         {onEditItem && (
                           <button 
                             onClick={() => {
@@ -268,7 +329,8 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                             Delete
                           </button>
                         )}
-                      </div>
+                      </div>,
+                      document.body
                     )}
                   </div>
                 )}

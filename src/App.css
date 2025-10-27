@@ -945,7 +945,10 @@ body {
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
-  min-width: 120px;
+  /* keep a small minimum but cap the maximum so the menu doesn't grow too wide */
+  min-width: 100px;
+  max-width: 220px;
+  width: auto;
   margin-top: 4px;
 }
 
@@ -963,9 +966,23 @@ body {
   margin-bottom: 0;
 }
 
+/* Portal dropdown: force fixed positioning and very high z-index so it sits on top of everything */
+.dropdown-portal {
+  /* Portal container: fixed and very high in the stacking context so it sits above everything.
+     IMPORTANT: do not force left/top/right/bottom to `auto` with !important here —
+     React sets inline left/top from JS and those must be able to take effect. */
+  position: fixed !important;
+  z-index: 200000 !important;
+  margin: 0 !important;
+  /* Allow pointer interactions and small rendering optimizations */
+  pointer-events: auto;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
 .dropdown-item {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px; /* slightly slimmer padding */
   border: none;
   background: none;
   text-align: left;
@@ -975,6 +992,9 @@ body {
   gap: 8px;
   font-size: 0.9rem;
   transition: background-color 0.2s ease;
+  white-space: nowrap; /* keep items on one line */
+  overflow: hidden;
+  text-overflow: ellipsis; /* truncate long labels */
 }
 
 .dropdown-item:hover {
@@ -1309,6 +1329,27 @@ body {
     padding: 16px 20px;
     gap: 16px;
     align-items: center;
+  }
+
+  /* Make the header a positioning context so the hamburger can sit absolutely
+     in the top-right corner on mobile devices. Use safe-area insets for iOS. */
+  .dashboard-header {
+    position: relative;
+  }
+
+  .mobile-menu-toggle {
+    position: absolute;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    z-index: 2001; /* above the sidebar/backdrop */
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px; /* keep internal padding for hit target */
+    background: none;
+    border-radius: 8px;
   }
 
   .dashboard-header h1 {
