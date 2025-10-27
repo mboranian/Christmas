@@ -707,7 +707,9 @@ body {
   content: counter(item-counter) ".";
   position: absolute;
   left: 20px;
-  top: 8px;
+  top: 50%;
+  /* Nudge slightly up so the number visually aligns with the item text baseline */
+  transform: translateY(calc(-50% - 1px));
   font-weight: bold;
   color: #c41e3a;
   font-size: 1.1rem;
@@ -744,7 +746,7 @@ body {
 .item-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 4px;
 }
 
@@ -1024,6 +1026,55 @@ body {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+/* Export PDF button (appears below the items list, right-aligned) */
+
+.export-pdf-wrapper {
+  margin-top: 6px;
+}
+
+.export-pdf-button {
+  background: linear-gradient(45deg, #c41e3a, #e74c3c);
+  color: white;
+  border: none;
+  padding: 3px 6px; /* even smaller padding */
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.72rem; /* even smaller text */
+  line-height: 1;
+  height: 24px; /* slightly shorter */
+  min-width: 56px;
+  box-shadow: 0 1px 4px rgba(196, 30, 58, 0.10);
+  transition: all 0.10s ease;
+}
+
+.export-pdf-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(196, 30, 58, 0.14);
+}
+
+/* Disabled state for export button */
+.export-pdf-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.export-pdf-button:disabled:hover {
+  transform: none;
+}
+
+@media (max-width: 480px) {
+  .export-pdf-wrapper {
+    justify-content: center;
+  }
+  .export-pdf-button {
+    width: 100%;
+    max-width: 200px; /* narrower on mobile */
+  }
 }
 
 .reorder-button {

@@ -212,6 +212,77 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
+  // Export the currently selected list to a printable window (user can save as PDF)
+  const escapeHtml = (unsafe: string) => {
+    return unsafe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const exportListAsPDF = () => {
+    const selectedList = getSelectedList();
+    if (!selectedList) return;
+    if (!selectedList.items || selectedList.items.length === 0) {
+      // nothing to export
+      alert('This list is empty — there is nothing to export.');
+      return;
+    }
+    const selectedUser = getSelectedUser();
+
+    const title = `${escapeHtml(selectedUser.name)} - Christmas List`;
+
+    const itemsHtml = selectedList.items.map((it, i) => {
+      const titleEsc = escapeHtml(it.title || '');
+      const linkPart = it.link ? ` &middot; <a href="${escapeHtml(it.link)}">${escapeHtml(it.link)}</a>` : '';
+      return `<li style="margin:8px 0; font-size:16px;">${i + 1}. ${titleEsc}${linkPart}</li>`;
+    }).join('');
+
+    const pageStyles = `
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding:24px; color:#222 }
+      h1 { color: #c41e3a; margin-bottom: 12px }
+      ul { padding-left: 0; list-style: none }
+      a { color: #c41e3a; text-decoration: none }
+    `;
+
+    const html = `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>${title}</title>
+          <style>${pageStyles}</style>
+        </head>
+        <body>
+          <h1>${title}</h1>
+          <p style="color:#555; margin-bottom:10px;">Exported from Christmas Lists</p>
+          <ul>${itemsHtml}</ul>
+        </body>
+      </html>`;
+
+    const newWin = window.open('', '_blank');
+    if (!newWin) {
+      // Popup blocked
+      alert('Popup blocked. Please allow popups for this site to export the PDF.');
+      return;
+    }
+
+    newWin.document.open();
+    newWin.document.write(html);
+    newWin.document.close();
+    // Give the browser a moment to render before triggering print
+    newWin.focus();
+    setTimeout(() => {
+      try {
+        newWin.print();
+      } catch (err) {
+        console.error('Print failed:', err);
+      }
+    }, 200);
+  };
+
   if (isLoading) {
     return (
       <div className="dashboard">
@@ -362,6 +433,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                         ))
                       )}
                     </div>
+
+                    {/* Export button just below the list, right-aligned */}
+                    {selectedList && (
+                      <div className="export-pdf-wrapper" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                        <button
+                          className="export-pdf-button"
+                          onClick={exportListAsPDF}
+                          aria-label={`Export ${getSelectedUser().name} list as PDF`}
+                          disabled={!selectedList.items || selectedList.items.length === 0}
+                        >
+                          Export as PDF
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
