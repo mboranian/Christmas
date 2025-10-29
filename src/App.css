@@ -1623,4 +1623,30 @@ body {
       max-width: calc(100vw - 220px) !important;
     }
   }
+
+  /* Keep action buttons pinned to the right on narrow screens regardless of title length */
+  .item-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .item-title {
+    /* allow the title to wrap to multiple lines and not push buttons */
+    overflow-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  .item-buttons {
+    justify-self: end; /* pin the buttons in the right column */
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .item-buttons > * {
+    flex: none; /* buttons keep their intrinsic/fixed size and don't shrink/grow */
+  }
 }
