@@ -44,5 +44,25 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
+    <script>
+      // If an older service worker or cached files are causing the deployed site to show a blank page,
+      // unregister any service workers and clear caches. This runs once on page load.
+      (function(){
+        if ('serviceWorker' in navigator) {
+          try {
+            navigator.serviceWorker.getRegistrations().then(function(regs){
+              regs.forEach(function(r){ r.unregister(); });
+            }).catch(function(){});
+          } catch(e) {}
+        }
+        if (window.caches && caches.keys) {
+          try {
+            caches.keys().then(function(keys){
+              return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+            }).catch(function(){});
+          } catch(e) {}
+        }
+      })();
+    </script>
   </body>
 </html>
