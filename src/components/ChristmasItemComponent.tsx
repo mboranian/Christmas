@@ -244,6 +244,23 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
             <>
                             <h4>{item.title}</h4>
               <div className="item-buttons">
+                {/* Render buy button first so the check mark appears to the right when viewing another user's list */}
+                {item.link && !isReorderMode && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="buy-button"
+                    title="Buy this item"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1"></circle>
+                      <circle cx="20" cy="21" r="1"></circle>
+                      <path d="m1,1 h4 l2.68,13.39 a2,2 0 0,0 2,1.61H19.4a2,2 0 0,0 2,-1.61L23,6H6"></path>
+                    </svg>
+                    Buy Here!
+                  </a>
+                )}
                 {!isOwner && !isReorderMode && (
                   <button
                     onClick={() => onToggleCheck(item.id)}
@@ -260,22 +277,6 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                       </svg>
                     )}
                   </button>
-                )}
-                {item.link && !isReorderMode && (
-                  <a 
-                    href={item.link} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="buy-button"
-                    title="Buy this item"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="9" cy="21" r="1"></circle>
-                      <circle cx="20" cy="21" r="1"></circle>
-                      <path d="m1,1 h4 l2.68,13.39 a2,2 0 0,0 2,1.61H19.4a2,2 0 0,0 2,-1.61L23,6H6"></path>
-                    </svg>
-                    Buy Here!
-                  </a>
                 )}
                 {isOwner && (onEditItem || onDeleteItem) && !isReorderMode && (
                   <div className="dropdown-menu">
