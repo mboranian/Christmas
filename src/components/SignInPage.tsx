@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { User, USERS, USER_PASSWORDS } from '../types';
+import { User, USERS, USER_PASSWORD_HASHES } from '../types';
+import { hashPassword } from '../utils/hash';
 
 interface SignInPageProps {
   onSignIn: (user: User) => void;
@@ -18,14 +19,16 @@ const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
     setShowPasswordModal(true);
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!selectedUser) return;
     
-    // Validate password against the specific user's password
-    const correctPassword = USER_PASSWORDS[selectedUser.id];
-    if (password !== correctPassword) {
+    // Hash the entered password and compare with stored hash
+    const enteredHash = await hashPassword(password);
+    const correctHash = USER_PASSWORD_HASHES[selectedUser.id];
+    
+    if (enteredHash !== correctHash) {
       setPasswordError('Incorrect password. Please try again.');
       return;
     }
