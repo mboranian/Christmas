@@ -7,6 +7,7 @@ export interface ChristmasItem {
   id: string;
   title: string;
   link?: string;
+  notes?: string;
   checkedBy: string[]; // Array of user IDs who have checked this item
   createdAt: number;
 }
@@ -17,6 +18,23 @@ export interface ChristmasList {
   ownerName: string;
   items: ChristmasItem[];
   createdAt: number;
+}
+
+export interface GiftItem {
+  id: string;
+  title: string;
+  link?: string;
+  notes?: string;
+  source: 'checked' | 'manual'; // 'checked' = from checking someone's list, 'manual' = manually added
+  sourceItemId?: string; // ID of the original item if source is 'checked'
+  createdAt: number;
+}
+
+export interface GiftsGiving {
+  userId: string; // The user who is giving gifts
+  gifts: {
+    [recipientId: string]: GiftItem[]; // Gifts for each recipient user
+  };
 }
 
 export const USERS: User[] = [

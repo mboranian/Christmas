@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ChristmasList, ChristmasItem, User, USERS } from '../types';
-import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists } from '../utils/storage';
+import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem } from '../types';
+import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
+import GiftItemComponent from './GiftItemComponent';
 
 interface DashboardProps {
   currentUser: User;
@@ -11,12 +12,15 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [allLists, setAllLists] = useState<ChristmasList[]>([]);
+  const [giftsGiving, setGiftsGiving] = useState<GiftsGiving>({ userId: currentUser.id, gifts: {} });
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(currentUser.id);
+  const [viewMode, setViewMode] = useState<'lists' | 'giftsGiving'>('lists');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeGiftFormRecipient, setActiveGiftFormRecipient] = useState<string | null>(null);
 
   // Helper to get the currently selected list
   const getSelectedList = () => {
@@ -31,27 +35,39 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   useEffect(() => {
     loadData();
     
-    // Set up real-time listener
-    const unsubscribe = subscribeToLists((lists) => {
-      // Only log in development
+    // Set up real-time listener for lists
+    const unsubscribeLists = subscribeToLists((lists) => {
       if (process.env.NODE_ENV === 'development') {
-        console.log('📡 Real-time update received');
+        console.log('📡 Real-time update received (lists)');
       }
       setAllLists(lists);
     });
 
-    // Cleanup subscription on unmount
+    // Set up real-time listener for gifts giving
+    const unsubscribeGifts = subscribeToGiftsGiving(currentUser.id, (data) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📡 Real-time update received (gifts giving)');
+      }
+      setGiftsGiving(data);
+    });
+
+    // Cleanup subscriptions on unmount
     return () => {
-      unsubscribe();
+      unsubscribeLists();
       unsubscribeFromLists();
+      unsubscribeGifts();
     };
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const lists = await getAllLists();
+      const [lists, gifts] = await Promise.all([
+        getAllLists(),
+        getGiftsGiving(currentUser.id)
+      ]);
       setAllLists(lists);
+      setGiftsGiving(gifts);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -127,17 +143,26 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const editItem = async (itemId: string, updatedData: { title: string; link?: string }) => {
+  const editItem = async (itemId: string, updatedData: { title: string; link?: string; notes?: string }) => {
     const currentList = getSelectedList();
     if (!currentList || selectedUserId !== currentUser.id) return;
 
     const updatedList = {
       ...currentList,
-      items: currentList.items.map((item: ChristmasItem) => 
-        item.id === itemId 
-          ? { ...item, ...updatedData }
-          : item
-      ),
+      items: currentList.items.map((item: ChristmasItem) => {
+        if (item.id === itemId) {
+          const updated = { ...item, ...updatedData };
+          // Remove properties that are explicitly set to undefined
+          if (updatedData.link === undefined) {
+            delete updated.link;
+          }
+          if (updatedData.notes === undefined) {
+            delete updated.notes;
+          }
+          return updated;
+        }
+        return item;
+      }),
     };
 
     setIsSyncing(true);
@@ -199,14 +224,130 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
 
       if (isCurrentlyChecked) {
         item.checkedBy = item.checkedBy.filter(userId => userId !== currentUser.id);
+        
+        // If unchecking someone else's item, remove from gifts giving
+        if (listOwnerId !== currentUser.id) {
+          const updatedGifts = { ...giftsGiving };
+          if (updatedGifts.gifts[listOwnerId]) {
+            updatedGifts.gifts[listOwnerId] = updatedGifts.gifts[listOwnerId].filter(
+              gift => gift.sourceItemId !== itemId
+            );
+            await saveGiftsGiving(currentUser.id, updatedGifts);
+          }
+        }
       } else {
         item.checkedBy.push(currentUser.id);
+        
+        // If checking someone else's item, add to gifts giving
+        if (listOwnerId !== currentUser.id) {
+          const giftItem: GiftItem = {
+            id: generateId(),
+            title: item.title,
+            link: item.link,
+            notes: item.notes,
+            source: 'checked',
+            sourceItemId: itemId,
+            createdAt: Date.now()
+          };
+          const updatedGifts = { ...giftsGiving };
+          if (!updatedGifts.gifts[listOwnerId]) {
+            updatedGifts.gifts[listOwnerId] = [];
+          }
+          updatedGifts.gifts[listOwnerId].push(giftItem);
+          await saveGiftsGiving(currentUser.id, updatedGifts);
+        }
       }
 
       await createOrUpdateUserList(list);
       // Real-time listener will update the UI automatically
     } catch (error) {
       console.error('Error toggling item check:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Add a manual gift item to a specific recipient
+  const addGiftItem = async (recipientId: string, title: string, link?: string, notes?: string) => {
+    setIsSyncing(true);
+    try {
+      const giftItem: GiftItem = {
+        id: generateId(),
+        title: title.trim(),
+        link: link?.trim() || undefined,
+        notes: notes?.trim() || undefined,
+        source: 'manual',
+        createdAt: Date.now()
+      };
+
+      const updatedGifts = { ...giftsGiving };
+      if (!updatedGifts.gifts[recipientId]) {
+        updatedGifts.gifts[recipientId] = [];
+      }
+      updatedGifts.gifts[recipientId].push(giftItem);
+
+      await saveGiftsGiving(currentUser.id, updatedGifts);
+      // Real-time listener will update the UI automatically
+    } catch (error) {
+      console.error('Error adding gift item:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Edit a gift item for a specific recipient
+  const editGiftItem = async (recipientId: string, giftItemId: string, updatedData: { title?: string; link?: string; notes?: string }) => {
+    setIsSyncing(true);
+    try {
+      const updatedGifts = { ...giftsGiving };
+      if (updatedGifts.gifts[recipientId]) {
+        updatedGifts.gifts[recipientId] = updatedGifts.gifts[recipientId].map(gift => {
+          if (gift.id === giftItemId) {
+            const updated = { ...gift, ...updatedData };
+            // Remove properties that are explicitly set to undefined
+            if (updatedData.link === undefined) {
+              delete updated.link;
+            }
+            if (updatedData.notes === undefined) {
+              delete updated.notes;
+            }
+            return updated;
+          }
+          return gift;
+        });
+        await saveGiftsGiving(currentUser.id, updatedGifts);
+        // Real-time listener will update the UI automatically
+      }
+    } catch (error) {
+      console.error('Error editing gift item:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Delete a gift item from a specific recipient
+  const deleteGiftItem = async (recipientId: string, giftItemId: string) => {
+    setIsSyncing(true);
+    try {
+      const updatedGifts = { ...giftsGiving };
+      if (updatedGifts.gifts[recipientId]) {
+        // Find the gift to check if it came from checking their list
+        const giftToDelete = updatedGifts.gifts[recipientId].find(gift => gift.id === giftItemId);
+        
+        updatedGifts.gifts[recipientId] = updatedGifts.gifts[recipientId].filter(
+          gift => gift.id !== giftItemId
+        );
+        await saveGiftsGiving(currentUser.id, updatedGifts);
+        
+        // If this gift came from checking an item on their list, uncheck it
+        if (giftToDelete && giftToDelete.source === 'checked' && giftToDelete.sourceItemId) {
+          await toggleItemCheck(recipientId, giftToDelete.sourceItemId);
+        }
+        
+        // Real-time listener will update the UI automatically
+      }
+    } catch (error) {
+      console.error('Error deleting gift item:', error);
     } finally {
       setIsSyncing(false);
     }
@@ -340,22 +481,54 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
             {[currentUser, ...USERS.filter(user => user.id !== currentUser.id)].map(user => (
               <button 
                 key={user.id}
-                className={`sidebar-tab ${selectedUserId === user.id ? 'active' : ''}`}
+                className={`sidebar-tab ${selectedUserId === user.id && viewMode === 'lists' ? 'active' : ''}`}
                 onClick={() => {
+                  setViewMode('lists');
                   setSelectedUserId(user.id);
                   setIsReorderMode(false);
                   setShowAddForm(false);
                   setIsMobileMenuOpen(false); // Close mobile menu after selection
                 }}
               >
-                {user.name === currentUser.name ? '👤 My List' : `🎁 ${user.name}`}
+                {user.name === currentUser.name ? (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '8px', verticalAlign: 'middle'}}>
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    My List
+                  </>
+                ) : (
+                  user.name
+                )}
               </button>
             ))}
+            
+            {/* Divider */}
+            <div className="sidebar-divider"></div>
+            
+            {/* Gifts I'm Giving button */}
+            <button 
+              className={`sidebar-tab gifts-giving-tab ${viewMode === 'giftsGiving' ? 'active' : ''}`}
+              onClick={() => {
+                setViewMode('giftsGiving');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{display: 'inline-block', marginRight: '8px', verticalAlign: 'middle'}}>
+                <polyline points="20 12 20 22 4 22 4 12"></polyline>
+                <rect x="2" y="7" width="20" height="5"></rect>
+                <line x1="12" y1="22" x2="12" y2="7"></line>
+                <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+                <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+              </svg>
+              Gifts I'm Giving
+            </button>
           </nav>
         </aside>
 
         <main className="main-content">
-          {(() => {
+          {viewMode === 'lists' ? (() => {
             const selectedUser = getSelectedUser();
             const selectedList = getSelectedList();
             const isOwner = selectedUserId === currentUser.id;
@@ -451,7 +624,61 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                 )}
               </div>
             );
-          })()}
+          })() : (
+            <div className="gifts-giving-section">
+              <div className="section-header">
+                <h2>Gifts I'm Giving</h2>
+              </div>
+              
+              {USERS.filter(user => user.id !== currentUser.id).map(recipient => {
+                const gifts = giftsGiving.gifts[recipient.id] || [];
+                const isFormOpen = activeGiftFormRecipient === recipient.id;
+                
+                return (
+                  <div key={recipient.id} className="recipient-section">
+                    <h3>{recipient.name}</h3>
+                    
+                    <button 
+                      onClick={() => setActiveGiftFormRecipient(isFormOpen ? null : recipient.id)} 
+                      className="add-item-button"
+                      disabled={isSyncing}
+                      style={{marginBottom: '12px'}}
+                    >
+                      {isFormOpen ? 'Cancel' : '+ Add Gift'}
+                    </button>
+                    
+                    {isFormOpen && (
+                      <div className="add-item-section" style={{marginBottom: '12px'}}>
+                        <AddItemForm 
+                          onAddItem={(itemData) => {
+                            addGiftItem(recipient.id, itemData.title, itemData.link, itemData.notes);
+                            setActiveGiftFormRecipient(null);
+                          }}
+                          onCancel={() => setActiveGiftFormRecipient(null)}
+                        />
+                      </div>
+                    )}
+                    
+                    <div className="items-list" style={gifts.length === 0 ? {padding: '20px'} : undefined}>
+                      {gifts.length === 0 ? (
+                        <p className="no-items" style={{padding: 0, margin: 0}}>No gifts planned for {recipient.name} yet.</p>
+                      ) : (
+                        gifts.map((gift: GiftItem) => (
+                          <GiftItemComponent
+                            key={gift.id}
+                            gift={gift}
+                            recipientId={recipient.id}
+                            onEditItem={editGiftItem}
+                            onDeleteItem={deleteGiftItem}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </main>
       </div>
     </div>

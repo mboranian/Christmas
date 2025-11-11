@@ -9,7 +9,7 @@ interface ChristmasItemComponentProps {
   listOwner: User;
   onToggleCheck: (itemId: string) => void;
   onDeleteItem?: (itemId: string) => void;
-  onEditItem?: (itemId: string, updatedData: { title: string; link?: string }) => void;
+  onEditItem?: (itemId: string, updatedData: { title: string; link?: string; notes?: string }) => void;
   onReorderItem?: (draggedId: string, targetId: string) => void;
   itemIndex: number;
   totalItems: number;
@@ -36,6 +36,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [editLink, setEditLink] = useState(item.link || '');
+  const [editNotes, setEditNotes] = useState(item.notes || '');
   
   // Drag state
   const [isDragOver, setIsDragOver] = useState(false);
@@ -137,17 +138,27 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
     setIsEditing(true);
     setEditTitle(item.title);
     setEditLink(item.link || '');
+    setEditNotes(item.notes || '');
   };
 
   const handleSaveEdit = () => {
     if (onEditItem && editTitle.trim()) {
-      const updatedData: { title: string; link?: string } = {
+      const updatedData: { title: string; link?: string; notes?: string } = {
         title: editTitle.trim()
       };
       
       const trimmedLink = editLink.trim();
       if (trimmedLink) {
         updatedData.link = trimmedLink;
+      } else {
+        updatedData.link = undefined;
+      }
+      
+      const trimmedNotes = editNotes.trim();
+      if (trimmedNotes) {
+        updatedData.notes = trimmedNotes;
+      } else {
+        updatedData.notes = undefined;
       }
       
       onEditItem(item.id, updatedData);
@@ -195,7 +206,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   
   return (
     <div 
-      className={`christmas-item ${isCheckedByCurrentUser ? 'checked-by-me' : ''} ${isDragOver ? 'drag-over' : ''} ${isReorderMode ? 'reorder-mode' : ''}`}
+      className={`christmas-item ${isCheckedByCurrentUser ? 'checked-by-me' : ''} ${isDragOver ? 'drag-over' : ''} ${isReorderMode ? 'reorder-mode' : ''} ${item.notes ? 'has-notes' : ''}`}
       draggable={isOwner && isReorderMode}
       onDragStart={isReorderMode ? handleDragStart : undefined}
       onDragOver={isReorderMode ? handleDragOver : undefined}
@@ -222,6 +233,13 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                   placeholder="Link (optional)"
                   className="edit-link-input"
                 />
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Notes (optional)"
+                  className="edit-notes-input"
+                  rows={2}
+                />
               </div>
               <div className="edit-buttons">
                 <button 
@@ -242,7 +260,12 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
             </div>
           ) : (
             <>
-                            <h4>{item.title}</h4>
+              <div className="item-text">
+                <h4>{item.title}</h4>
+                {item.notes && (
+                  <p className="item-notes">{item.notes}</p>
+                )}
+              </div>
               <div className="item-buttons">
                 {/* Render buy button first so the check mark appears to the right when viewing another user's list */}
                 {item.link && !isReorderMode && (

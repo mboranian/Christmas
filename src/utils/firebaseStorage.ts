@@ -8,10 +8,11 @@ import {
   Unsubscribe 
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { ChristmasList } from '../types';
+import { ChristmasList, GiftsGiving } from '../types';
 
 const LISTS_COLLECTION = 'christmas-lists';
 const LISTS_DOCUMENT = 'all-lists';
+const GIFTS_GIVING_COLLECTION = 'gifts-giving';
 
 export class FirebaseStorage {
   private unsubscribe: Unsubscribe | null = null;
@@ -194,6 +195,75 @@ export class FirebaseStorage {
     } catch (error) {
       console.error('Error going online:', error);
     }
+  }
+
+  /**
+   * Save gifts giving data for a specific user
+   */
+  async saveGiftsGiving(userId: string, giftsData: GiftsGiving): Promise<void> {
+    try {
+      await setDoc(doc(db, GIFTS_GIVING_COLLECTION, userId), {
+        ...giftsData,
+        lastUpdated: Date.now()
+      });
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`✅ Successfully saved gifts giving for ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error saving gifts giving:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get gifts giving data for a specific user
+   */
+  async getGiftsGiving(userId: string): Promise<GiftsGiving> {
+    try {
+      const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data() as GiftsGiving;
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Successfully fetched gifts giving for ${userId}`);
+        }
+        return data;
+      } else {
+        // Return empty structure if no data exists
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`📝 No gifts giving data for ${userId}, starting fresh`);
+        }
+        return { userId, gifts: {} };
+      }
+    } catch (error) {
+      console.error('❌ Error fetching gifts giving:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Subscribe to real-time updates for a user's gifts giving data
+   */
+  subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
+    const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
+    
+    const unsubscribe = onSnapshot(docRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data() as GiftsGiving;
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔄 Real-time update for gifts giving (${userId})`);
+        }
+        callback(data);
+      } else {
+        callback({ userId, gifts: {} });
+      }
+    }, (error) => {
+      console.error('❌ Error in gifts giving listener:', error);
+    });
+
+    return unsubscribe;
   }
 }
 

@@ -9,6 +9,7 @@ interface AddItemFormProps {
 const AddItemForm: React.FC<AddItemFormProps> = ({ onAddItem, onCancel }) => {
   const [title, setTitle] = useState('');
   const [link, setLink] = useState('');
+  const [notes, setNotes] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,9 +24,16 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onAddItem, onCancel }) => {
         itemData.link = trimmedLink;
       }
       
+      // Only include notes if it has a value
+      const trimmedNotes = notes.trim();
+      if (trimmedNotes) {
+        itemData.notes = trimmedNotes;
+      }
+      
       onAddItem(itemData);
       setTitle('');
       setLink('');
+      setNotes('');
     }
   };
 
@@ -52,6 +60,17 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onAddItem, onCancel }) => {
           value={link}
           onChange={(e) => setLink(e.target.value)}
           placeholder="https://example.com/product"
+        />
+      </div>
+      
+      <div className="form-group">
+        <label htmlFor="notes">Notes (optional)</label>
+        <textarea
+          id="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Size, color, preferences, etc."
+          rows={3}
         />
       </div>
       

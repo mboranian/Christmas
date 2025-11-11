@@ -1,8 +1,9 @@
-import { ChristmasList, User } from '../types';
+import { ChristmasList, User, GiftsGiving } from '../types';
 import { firebaseStorage } from './firebaseStorage';
 
 const CURRENT_USER_KEY = 'christmas-current-user';
 const STORAGE_KEY = 'christmas-lists';
+const GIFTS_GIVING_KEY_PREFIX = 'christmas-gifts-giving-';
 
 // User authentication (uses localStorage since it's per-device)
 export const getCurrentUser = (): User | null => {
@@ -124,4 +125,62 @@ export const unsubscribeFromLists = () => {
 
 export const generateId = (): string => {
   return Math.random().toString(36).substr(2, 9);
+};
+
+// Gifts Giving storage functions
+export const getGiftsGiving = async (userId: string): Promise<GiftsGiving> => {
+  const isFirebaseConfigured = true;
+  
+  if (isFirebaseConfigured) {
+    try {
+      const data = await firebaseStorage.getGiftsGiving(userId);
+      // Save to localStorage as backup
+      localStorage.setItem(`${GIFTS_GIVING_KEY_PREFIX}${userId}`, JSON.stringify(data));
+      return data;
+    } catch (error) {
+      console.warn('⚠️ Firebase unavailable for gifts giving, using localStorage fallback:', error);
+    }
+  }
+  
+  // Fallback to localStorage
+  const stored = localStorage.getItem(`${GIFTS_GIVING_KEY_PREFIX}${userId}`);
+  return stored ? JSON.parse(stored) : { userId, gifts: {} };
+};
+
+export const saveGiftsGiving = async (userId: string, data: GiftsGiving): Promise<void> => {
+  // Always save to localStorage first
+  localStorage.setItem(`${GIFTS_GIVING_KEY_PREFIX}${userId}`, JSON.stringify(data));
+  
+  const isFirebaseConfigured = true;
+  
+  if (isFirebaseConfigured) {
+    try {
+      await firebaseStorage.saveGiftsGiving(userId, data);
+    } catch (error) {
+      console.warn('⚠️ Firebase save failed for gifts giving, saved to localStorage only:', error);
+    }
+  }
+};
+
+export const subscribeToGiftsGiving = (userId: string, callback: (data: GiftsGiving) => void) => {
+  const isFirebaseConfigured = true;
+  
+  if (isFirebaseConfigured) {
+    try {
+      return firebaseStorage.subscribeToGiftsGiving(userId, (data) => {
+        // Save to localStorage on updates
+        localStorage.setItem(`${GIFTS_GIVING_KEY_PREFIX}${userId}`, JSON.stringify(data));
+        callback(data);
+      });
+    } catch (error) {
+      console.warn('⚠️ Firebase subscription failed for gifts giving, using localStorage only');
+    }
+  }
+  
+  // Fallback: just return initial data and no-op unsubscribe
+  const stored = localStorage.getItem(`${GIFTS_GIVING_KEY_PREFIX}${userId}`);
+  const data = stored ? JSON.parse(stored) : { userId, gifts: {} };
+  callback(data);
+  
+  return () => {};
 };
