@@ -83,15 +83,21 @@ export class FirebaseStorage {
    */
   async saveUserPrefs(userId: string, prefs: Record<string, any>): Promise<void> {
     try {
-      await setDoc(doc(db, USER_PREFS_COLLECTION, userId), {
+      const docRef = doc(db, USER_PREFS_COLLECTION, userId);
+      console.log(`💾 Attempting to save prefs for ${userId} to Firestore:`, prefs);
+      await setDoc(docRef, {
         ...prefs,
         lastUpdated: Date.now()
       });
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ Successfully saved prefs for ${userId}`);
+      console.log(`✅ Successfully saved prefs for ${userId} to Firestore`);
+    } catch (error: any) {
+      console.error('❌ Error saving user prefs to Firestore:', error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED: You need to update Firestore security rules!');
+        console.error('Go to Firebase Console > Firestore Database > Rules and allow read/write');
       }
-    } catch (error) {
-      console.error('❌ Error saving user prefs:', error);
       throw error;
     }
   }
@@ -102,21 +108,23 @@ export class FirebaseStorage {
   async getUserPrefs(userId: string): Promise<Record<string, any>> {
     try {
       const docRef = doc(db, USER_PREFS_COLLECTION, userId);
+      console.log(`📖 Attempting to read prefs for ${userId} from Firestore`);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as Record<string, any>;
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`✅ Successfully fetched prefs for ${userId}`);
-        }
+        console.log(`✅ Successfully fetched prefs for ${userId}:`, data);
         return data;
       } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`📝 No prefs found for ${userId}, returning empty`);
-        }
+        console.log(`📝 No prefs found for ${userId} in Firestore, returning empty`);
         return {};
       }
-    } catch (error) {
-      console.error('❌ Error fetching user prefs:', error);
+    } catch (error: any) {
+      console.error('❌ Error fetching user prefs from Firestore:', error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED: You need to update Firestore security rules!');
+      }
       throw error;
     }
   }
@@ -126,18 +134,22 @@ export class FirebaseStorage {
    */
   subscribeToUserPrefs(userId: string, callback: (data: Record<string, any>) => void) {
     const docRef = doc(db, USER_PREFS_COLLECTION, userId);
+    console.log(`🔔 Setting up real-time listener for prefs (${userId})`);
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data() as Record<string, any>;
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🔄 Real-time update for prefs (${userId})`);
-        }
+        console.log(`🔄 Real-time update for prefs (${userId}):`, data);
         callback(data);
       } else {
+        console.log(`📝 Real-time update: No prefs doc exists for ${userId}`);
         callback({});
       }
-    }, (error) => {
+    }, (error: any) => {
       console.error('❌ Error in prefs listener:', error);
+      console.error('Error code:', error?.code);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED for real-time listener!');
+      }
     });
 
     return unsubscribe;
