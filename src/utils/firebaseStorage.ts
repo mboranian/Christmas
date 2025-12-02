@@ -280,16 +280,21 @@ export class FirebaseStorage {
    */
   async saveGiftsGiving(userId: string, giftsData: GiftsGiving): Promise<void> {
     try {
-      await setDoc(doc(db, GIFTS_GIVING_COLLECTION, userId), {
+      const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
+      console.log(`💾 Attempting to save gifts-giving for ${userId} to Firestore`);
+      await setDoc(docRef, {
         ...giftsData,
         lastUpdated: Date.now()
       });
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ Successfully saved gifts giving for ${userId}`);
+      console.log(`✅ Successfully saved gifts-giving for ${userId} to Firestore`);
+    } catch (error: any) {
+      console.error('❌ Error saving gifts-giving to Firestore:', error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving!');
+        console.error('Check that gifts-giving collection is allowed in Firestore Rules');
       }
-    } catch (error) {
-      console.error('❌ Error saving gifts giving:', error);
       throw error;
     }
   }
@@ -300,23 +305,25 @@ export class FirebaseStorage {
   async getGiftsGiving(userId: string): Promise<GiftsGiving> {
     try {
       const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
+      console.log(`📖 Attempting to read gifts-giving for ${userId} from Firestore`);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
         const data = docSnap.data() as GiftsGiving;
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`✅ Successfully fetched gifts giving for ${userId}`);
-        }
+        console.log(`✅ Successfully fetched gifts-giving for ${userId} from Firestore`);
         return data;
       } else {
         // Return empty structure if no data exists
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`📝 No gifts giving data for ${userId}, starting fresh`);
-        }
+        console.log(`📝 No gifts-giving data for ${userId} in Firestore, starting fresh`);
         return { userId, gifts: {} };
       }
-    } catch (error) {
-      console.error('❌ Error fetching gifts giving:', error);
+    } catch (error: any) {
+      console.error('❌ Error fetching gifts-giving from Firestore:', error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving!');
+      }
       throw error;
     }
   }
@@ -326,19 +333,23 @@ export class FirebaseStorage {
    */
   subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
     const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
+    console.log(`🔔 Setting up real-time listener for gifts-giving (${userId})`);
     
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data() as GiftsGiving;
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🔄 Real-time update for gifts giving (${userId})`);
-        }
+        console.log(`🔄 Real-time update for gifts-giving (${userId})`);
         callback(data);
       } else {
+        console.log(`📝 Real-time update: No gifts-giving doc exists for ${userId}`);
         callback({ userId, gifts: {} });
       }
-    }, (error) => {
-      console.error('❌ Error in gifts giving listener:', error);
+    }, (error: any) => {
+      console.error('❌ Error in gifts-giving listener:', error);
+      console.error('Error code:', error?.code);
+      if (error?.code === 'permission-denied') {
+        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving listener!');
+      }
     });
 
     return unsubscribe;
