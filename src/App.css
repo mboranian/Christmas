@@ -454,6 +454,11 @@ body {
   gap: 20px;
 }
 
+/* make user-info a positioning context for the settings dropdown */
+.user-info {
+  position: relative;
+}
+
 .status-indicators {
   display: flex;
   flex-direction: column;
@@ -512,6 +517,40 @@ body {
 
 .sign-out-button:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Settings button (gear icon) */
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.settings-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.settings-button:hover {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.16);
+}
+
+.settings-button:focus-visible {
+  outline: 3px solid rgba(196,30,58,0.18);
+  outline-offset: 2px;
 }
 
 .dashboard-nav {
@@ -1063,6 +1102,11 @@ textarea.edit-notes-input {
   text-overflow: ellipsis; /* truncate long labels */
 }
 
+/* Allow the toggle row to overflow (tooltip needs to escape the box) */
+.dropdown-item.toggle-row {
+  overflow: visible;
+}
+
 .dropdown-item:hover {
   background-color: #f1f3f5;
 }
@@ -1073,6 +1117,124 @@ textarea.edit-notes-input {
 
 .dropdown-item.delete:hover {
   background-color: #fdf2f2;
+}
+
+/* Settings dropdown specific tweaks */
+.settings-dropdown {
+  min-width: 220px;
+  padding: 8px;
+  right: 0;
+  /* allow children (tooltip) to render outside the dropdown box */
+  overflow: visible;
+  z-index: 1100;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+}
+
+.toggle-label {
+  font-size: 0.95rem;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 26px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.2s;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  top: 3px;
+  background-color: white;
+  transition: 0.2s;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #27ae60;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(18px);
+}
+
+/* Tooltip for small controls like the anonymize toggle */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-text {
+  position: absolute;
+  /* place to the left of the control and vertically center */
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  /* No show delay here — we'll add delay on :hover so hiding stays immediate */
+  transition: opacity 0.14s ease 0s, transform 0.14s ease 0s;
+  z-index: 2000;
+}
+
+.tooltip-text::after {
+  content: "";
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px;
+  border-style: solid;
+  /* arrow pointing right toward the control */
+  border-color: transparent rgba(0,0,0,0.85) transparent transparent;
+}
+
+.tooltip-container:hover .tooltip-text,
+.tooltip-container:focus-within .tooltip-text {
+  /* small delay before showing so quick hovers don't flash the tooltip */
+  transition-delay: 1s;
+  opacity: 1;
+  transform: translateY(-50%) translateX(-6px);
+  pointer-events: auto;
 }
 
 .dropdown-item:first-child {

@@ -13,6 +13,7 @@ import { ChristmasList, GiftsGiving } from '../types';
 const LISTS_COLLECTION = 'christmas-lists';
 const LISTS_DOCUMENT = 'all-lists';
 const GIFTS_GIVING_COLLECTION = 'gifts-giving';
+const USER_PREFS_COLLECTION = 'user-prefs';
 
 export class FirebaseStorage {
   private unsubscribe: Unsubscribe | null = null;
@@ -75,6 +76,71 @@ export class FirebaseStorage {
       this.isSaving = false;
       this.saveQueue = null;
     }
+  }
+
+  /**
+   * Save user preferences (arbitrary small object) for a specific user
+   */
+  async saveUserPrefs(userId: string, prefs: Record<string, any>): Promise<void> {
+    try {
+      await setDoc(doc(db, USER_PREFS_COLLECTION, userId), {
+        ...prefs,
+        lastUpdated: Date.now()
+      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`✅ Successfully saved prefs for ${userId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error saving user prefs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user preferences for a specific user (one-time read)
+   */
+  async getUserPrefs(userId: string): Promise<Record<string, any>> {
+    try {
+      const docRef = doc(db, USER_PREFS_COLLECTION, userId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data() as Record<string, any>;
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ Successfully fetched prefs for ${userId}`);
+        }
+        return data;
+      } else {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`📝 No prefs found for ${userId}, returning empty`);
+        }
+        return {};
+      }
+    } catch (error) {
+      console.error('❌ Error fetching user prefs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Subscribe to real-time updates for a user's prefs
+   */
+  subscribeToUserPrefs(userId: string, callback: (data: Record<string, any>) => void) {
+    const docRef = doc(db, USER_PREFS_COLLECTION, userId);
+    const unsubscribe = onSnapshot(docRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data() as Record<string, any>;
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔄 Real-time update for prefs (${userId})`);
+        }
+        callback(data);
+      } else {
+        callback({});
+      }
+    }, (error) => {
+      console.error('❌ Error in prefs listener:', error);
+    });
+
+    return unsubscribe;
   }
 
   /**

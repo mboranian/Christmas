@@ -4,6 +4,7 @@ import { firebaseStorage } from './firebaseStorage';
 const CURRENT_USER_KEY = 'christmas-current-user';
 const STORAGE_KEY = 'christmas-lists';
 const GIFTS_GIVING_KEY_PREFIX = 'christmas-gifts-giving-';
+const USER_PREFS_KEY_PREFIX = 'christmas-user-prefs-';
 
 // User authentication (uses localStorage since it's per-device)
 export const getCurrentUser = (): User | null => {
@@ -182,5 +183,57 @@ export const subscribeToGiftsGiving = (userId: string, callback: (data: GiftsGiv
   const data = stored ? JSON.parse(stored) : { userId, gifts: {} };
   callback(data);
   
+  return () => {};
+};
+
+// User prefs (anonymize toggle and other small per-user settings)
+export const getUserPrefs = async (userId: string): Promise<Record<string, any>> => {
+  const isFirebaseConfigured = true;
+
+  if (isFirebaseConfigured) {
+    try {
+      const data = await firebaseStorage.getUserPrefs(userId);
+      // cache locally
+      localStorage.setItem(`${USER_PREFS_KEY_PREFIX}${userId}`, JSON.stringify(data || {}));
+      return data || {};
+    } catch (error) {
+      console.warn('⚠️ Firebase unavailable for user prefs, using localStorage fallback:', error);
+    }
+  }
+
+  const stored = localStorage.getItem(`${USER_PREFS_KEY_PREFIX}${userId}`);
+  return stored ? JSON.parse(stored) : {};
+};
+
+export const saveUserPrefs = async (userId: string, prefs: Record<string, any>): Promise<void> => {
+  // save locally first
+  localStorage.setItem(`${USER_PREFS_KEY_PREFIX}${userId}`, JSON.stringify(prefs));
+
+  const isFirebaseConfigured = true;
+  if (isFirebaseConfigured) {
+    try {
+      await firebaseStorage.saveUserPrefs(userId, prefs);
+    } catch (error) {
+      console.warn('⚠️ Firebase save failed for user prefs, saved to localStorage only:', error);
+    }
+  }
+};
+
+export const subscribeToUserPrefs = (userId: string, callback: (data: Record<string, any>) => void) => {
+  const isFirebaseConfigured = true;
+  if (isFirebaseConfigured) {
+    try {
+      return firebaseStorage.subscribeToUserPrefs(userId, (data) => {
+        localStorage.setItem(`${USER_PREFS_KEY_PREFIX}${userId}`, JSON.stringify(data || {}));
+        callback(data || {});
+      });
+    } catch (error) {
+      console.warn('⚠️ Firebase subscription failed for user prefs, using localStorage only');
+    }
+  }
+
+  const stored = localStorage.getItem(`${USER_PREFS_KEY_PREFIX}${userId}`);
+  const data = stored ? JSON.parse(stored) : {};
+  callback(data);
   return () => {};
 };

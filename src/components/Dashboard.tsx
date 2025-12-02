@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { BsFillGearFill } from "react-icons/bs";
 import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem } from '../types';
-import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving } from '../utils/storage';
+import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
 import GiftItemComponent from './GiftItemComponent';
@@ -20,7 +21,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeGiftFormRecipient, setActiveGiftFormRecipient] = useState<string | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const [anonymizeGivers, setAnonymizeGivers] = useState(false);
 
   // Helper to get the currently selected list
   const getSelectedList = () => {
@@ -33,8 +38,29 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   };
 
   useEffect(() => {
-    loadData();
-    
+    // Load lists, gifts and user prefs
+    const loadAll = async () => {
+      setIsLoading(true);
+      try {
+        const [lists, gifts, prefs] = await Promise.all([
+          getAllLists(),
+          getGiftsGiving(currentUser.id),
+          getUserPrefs(currentUser.id)
+        ]);
+        setAllLists(lists);
+        setGiftsGiving(gifts);
+        if (prefs && typeof prefs.anonymizeGivers === 'boolean') {
+          setAnonymizeGivers(prefs.anonymizeGivers);
+        }
+      } catch (err) {
+        console.error('Error loading data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAll();
+
     // Set up real-time listener for lists
     const unsubscribeLists = subscribeToLists((lists) => {
       if (process.env.NODE_ENV === 'development') {
@@ -51,13 +77,48 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       setGiftsGiving(data);
     });
 
+    // Subscribe to user prefs so anonymize toggles sync across devices
+    const unsubscribePrefs = subscribeToUserPrefs(currentUser.id, (prefs) => {
+      if (prefs && typeof prefs.anonymizeGivers === 'boolean') {
+        setAnonymizeGivers(prefs.anonymizeGivers);
+      }
+    });
+
     // Cleanup subscriptions on unmount
     return () => {
       unsubscribeLists();
       unsubscribeFromLists();
       unsubscribeGifts();
+      if (typeof unsubscribePrefs === 'function') unsubscribePrefs();
     };
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close settings menu when clicking outside or pressing Escape
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        settingsMenuRef.current && !settingsMenuRef.current.contains(target) &&
+        settingsButtonRef.current && !settingsButtonRef.current.contains(target)
+      ) {
+        setIsSettingsOpen(false);
+      }
+    };
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsSettingsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKey);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isSettingsOpen]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -72,6 +133,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       console.error('Error loading data:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleAnonymize = async (value?: boolean) => {
+    const next = typeof value === 'boolean' ? value : !anonymizeGivers;
+    setAnonymizeGivers(next);
+    try {
+      await saveUserPrefs(currentUser.id, { anonymizeGivers: next });
+    } catch (err) {
+      console.warn('Failed to persist anonymize preference:', err);
     }
   };
 
@@ -457,12 +528,55 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
           </svg>
         </button>
         <h1>🎄 Christmas Lists! 🎄</h1>
-        <div className="user-info">
+          <div className="user-info">
           <span>Merry Christmas, {currentUser.name}!</span>
           <div className="status-indicators">
             {isSyncing && <span className="sync-indicator">🔄 Syncing...</span>}
           </div>
-          <button onClick={onSignOut} className="sign-out-button">Sign Out</button>
+          <button
+            ref={settingsButtonRef}
+            className="settings-button"
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            title="Settings"
+            aria-haspopup="true"
+            aria-expanded={isSettingsOpen}
+            aria-label="Settings"
+          >
+            {React.createElement(BsFillGearFill as any)}
+          </button>
+
+          {isSettingsOpen && (
+            <div ref={settingsMenuRef} className="dropdown-content settings-dropdown">
+              <div className="dropdown-item toggle-row" role="group" aria-label="Settings">
+                <span className="toggle-label">Secret Santas</span>
+                <div className="tooltip-container">
+                  <label
+                    className="toggle-switch"
+                    aria-describedby="anonymize-tooltip"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={anonymizeGivers}
+                      onChange={() => toggleAnonymize()}
+                      aria-label="Anonymize Gift Givers"
+                    />
+                    <span className="toggle-slider" />
+                  </label>
+                  <span className="tooltip-text" role="tooltip" id="anonymize-tooltip">Hide who's giving what to whom</span>
+                </div>
+              </div>
+
+              <button
+                className="dropdown-item delete"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  onSignOut();
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -595,6 +709,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                             isOwner={isOwner}
                             currentUser={currentUser}
                             listOwner={selectedUser}
+                            anonymizeGivers={anonymizeGivers}
                             onToggleCheck={isOwner ? () => {} : (itemId) => toggleItemCheck(selectedUserId, itemId)}
                             onDeleteItem={isOwner ? deleteItem : undefined}
                             onEditItem={isOwner ? editItem : undefined}
@@ -661,7 +776,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                     
                     <div className="items-list" style={gifts.length === 0 ? {padding: '20px'} : undefined}>
                       {gifts.length === 0 ? (
-                        <p className="no-items" style={{padding: 0, margin: 0}}>No gifts planned for {recipient.name} yet.</p>
+                        <p className="no-items" style={{padding: 0, margin: 0}}>No gifts planned for {recipient.name} yet. Add a custom gift or check off an item from their list!</p>
                       ) : (
                         gifts.map((gift: GiftItem) => (
                           <GiftItemComponent

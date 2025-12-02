@@ -7,6 +7,7 @@ interface ChristmasItemComponentProps {
   isOwner: boolean;
   currentUser: User;
   listOwner: User;
+  anonymizeGivers?: boolean;
   onToggleCheck: (itemId: string) => void;
   onDeleteItem?: (itemId: string) => void;
   onEditItem?: (itemId: string, updatedData: { title: string; link?: string; notes?: string }) => void;
@@ -21,6 +22,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   isOwner,
   currentUser,
   listOwner,
+  anonymizeGivers = false,
   onToggleCheck,
   onDeleteItem,
   onEditItem,
@@ -368,6 +370,16 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
             <span className="check-count">
               {(() => {
                 const checkedUsers = USERS.filter(user => item.checkedBy.includes(user.id));
+                // If anonymization is enabled, don't show the user's name to other viewers
+                if (anonymizeGivers) {
+                  if (checkedUsers.length === 1) {
+                    return `Santa's got this!`;
+                  } else {
+                    return `${checkedUsers.length} Santas have got this!`;
+                  }
+                }
+
+                // Default (non-anonymized) behavior
                 if (checkedUsers.length === 1) {
                   return `${checkedUsers[0].name}'s got this!`;
                 } else if (checkedUsers.length === 2) {
