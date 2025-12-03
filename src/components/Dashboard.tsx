@@ -354,11 +354,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       const giftItem: GiftItem = {
         id: generateId(),
         title: title.trim(),
-        link: link?.trim() || undefined,
-        notes: notes?.trim() || undefined,
         source: 'manual',
         createdAt: Date.now()
-      };
+      } as GiftItem;
+
+      // Only include optional fields when present to avoid undefined values
+      if (link && link.trim()) giftItem.link = link.trim();
+      if (notes && notes.trim()) giftItem.notes = notes.trim();
 
       // Fetch latest gifts data to avoid overwriting other changes
       const currentGifts = await getGiftsGiving(currentUser.id);
@@ -368,8 +370,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       }
       updatedGifts.gifts[recipientId].push(giftItem);
 
+      // Optimistically update UI from local state so user sees the new gift immediately
+      setGiftsGiving(updatedGifts);
+
       await saveGiftsGiving(currentUser.id, updatedGifts);
-      // Real-time listener will update the UI automatically
+      // Real-time listener will also reconcile when Firestore update arrives
     } catch (error) {
       console.error('Error adding gift item:', error);
     } finally {
@@ -399,8 +404,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
           }
           return gift;
         });
+        // Optimistically update UI
+        setGiftsGiving(updatedGifts);
         await saveGiftsGiving(currentUser.id, updatedGifts);
-        // Real-time listener will update the UI automatically
+        // Real-time listener will reconcile with server state when available
       }
     } catch (error) {
       console.error('Error editing gift item:', error);
@@ -423,14 +430,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         updatedGifts.gifts[recipientId] = updatedGifts.gifts[recipientId].filter(
           gift => gift.id !== giftItemId
         );
+        // Optimistically update UI
+        setGiftsGiving(updatedGifts);
         await saveGiftsGiving(currentUser.id, updatedGifts);
-        
+
         // If this gift came from checking an item on their list, uncheck it
         if (giftToDelete && giftToDelete.source === 'checked' && giftToDelete.sourceItemId) {
           await toggleItemCheck(recipientId, giftToDelete.sourceItemId);
         }
         
-        // Real-time listener will update the UI automatically
+        // Real-time listener will reconcile when Firestore updates
       }
     } catch (error) {
       console.error('Error deleting gift item:', error);
