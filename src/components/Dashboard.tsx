@@ -298,7 +298,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         
         // If unchecking someone else's item, remove from gifts giving
         if (listOwnerId !== currentUser.id) {
-          const updatedGifts = { ...giftsGiving };
+          // Fetch latest gifts data to avoid overwriting other changes
+          const currentGifts = await getGiftsGiving(currentUser.id);
+          const updatedGifts = { ...currentGifts };
           if (updatedGifts.gifts[listOwnerId]) {
             updatedGifts.gifts[listOwnerId] = updatedGifts.gifts[listOwnerId].filter(
               gift => gift.sourceItemId !== itemId
@@ -314,18 +316,25 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
           const giftItem: GiftItem = {
             id: generateId(),
             title: item.title,
-            link: item.link,
-            notes: item.notes,
             source: 'checked',
             sourceItemId: itemId,
             createdAt: Date.now()
           };
-          const updatedGifts = { ...giftsGiving };
+          // Only add link and notes if they have values (Firestore doesn't accept undefined)
+          if (item.link) giftItem.link = item.link;
+          if (item.notes) giftItem.notes = item.notes;
+          
+          // Fetch latest gifts data to avoid overwriting other changes
+          const currentGifts = await getGiftsGiving(currentUser.id);
+          console.log('🎁 Current gifts before adding:', currentGifts);
+          const updatedGifts = { ...currentGifts };
           if (!updatedGifts.gifts[listOwnerId]) {
             updatedGifts.gifts[listOwnerId] = [];
           }
           updatedGifts.gifts[listOwnerId].push(giftItem);
+          console.log('🎁 Updated gifts after adding:', updatedGifts);
           await saveGiftsGiving(currentUser.id, updatedGifts);
+          console.log('🎁 Gift saved successfully');
         }
       }
 
@@ -351,7 +360,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         createdAt: Date.now()
       };
 
-      const updatedGifts = { ...giftsGiving };
+      // Fetch latest gifts data to avoid overwriting other changes
+      const currentGifts = await getGiftsGiving(currentUser.id);
+      const updatedGifts = { ...currentGifts };
       if (!updatedGifts.gifts[recipientId]) {
         updatedGifts.gifts[recipientId] = [];
       }
@@ -370,7 +381,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const editGiftItem = async (recipientId: string, giftItemId: string, updatedData: { title?: string; link?: string; notes?: string }) => {
     setIsSyncing(true);
     try {
-      const updatedGifts = { ...giftsGiving };
+      // Fetch latest gifts data to avoid overwriting other changes
+      const currentGifts = await getGiftsGiving(currentUser.id);
+      const updatedGifts = { ...currentGifts };
       if (updatedGifts.gifts[recipientId]) {
         updatedGifts.gifts[recipientId] = updatedGifts.gifts[recipientId].map(gift => {
           if (gift.id === giftItemId) {
@@ -400,7 +413,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const deleteGiftItem = async (recipientId: string, giftItemId: string) => {
     setIsSyncing(true);
     try {
-      const updatedGifts = { ...giftsGiving };
+      // Fetch latest gifts data to avoid overwriting other changes
+      const currentGifts = await getGiftsGiving(currentUser.id);
+      const updatedGifts = { ...currentGifts };
       if (updatedGifts.gifts[recipientId]) {
         // Find the gift to check if it came from checking their list
         const giftToDelete = updatedGifts.gifts[recipientId].find(gift => gift.id === giftItemId);
