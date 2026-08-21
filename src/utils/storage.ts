@@ -1,4 +1,4 @@
-import { ChristmasList, User, GiftsGiving } from '../types';
+import { ChristmasList, User, GiftsGiving, isArchivedYear } from '../types';
 import { firebaseStorage } from './firebaseStorage';
 
 const CURRENT_USER_KEY = 'christmas-current-user';
@@ -6,7 +6,9 @@ const STORAGE_KEY = 'christmas-lists';
 const GIFTS_GIVING_KEY_PREFIX = 'christmas-gifts-giving-';
 const USER_PREFS_KEY_PREFIX = 'christmas-user-prefs-';
 
-const giftsKey = (userId: string) => `${GIFTS_GIVING_KEY_PREFIX}${userId}`;
+// Cache keys carry the year so switching seasons can't serve the wrong data.
+const listsKey = (year: number) => `${STORAGE_KEY}-${year}`;
+const giftsKey = (year: number, userId: string) => `${GIFTS_GIVING_KEY_PREFIX}${year}-${userId}`;
 const prefsKey = (userId: string) => `${USER_PREFS_KEY_PREFIX}${userId}`;
 
 // Reads fall back to the localStorage cache when Firestore is unreachable, so
@@ -31,14 +33,14 @@ export const setCurrentUser = (user: User | null): void => {
   }
 };
 
-export const getAllLists = async (): Promise<ChristmasList[]> => {
+export const getAllLists = async (year: number): Promise<ChristmasList[]> => {
   try {
-    const lists = await firebaseStorage.getAllLists();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
+    const lists = await firebaseStorage.getAllLists(year);
+    localStorage.setItem(listsKey(year), JSON.stringify(lists));
     return lists;
   } catch (error) {
     console.warn('Firebase unavailable, using cached lists:', error);
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(listsKey(year));
     return stored ? JSON.parse(stored) : [];
   }
 };
@@ -52,21 +54,27 @@ export const getAllLists = async (): Promise<ChristmasList[]> => {
  * Rejects if the write doesn't land. Callers must handle that.
  */
 export const updateUserList = async (
+  year: number,
   ownerId: string,
   mutate: (current: ChristmasList | null) => ChristmasList
 ): Promise<void> => {
-  await firebaseStorage.updateUserList(ownerId, mutate);
+  if (isArchivedYear(year)) {
+    // Archived seasons are read-only. The UI hides the controls, but guard here
+    // too so a stray call can't rewrite history.
+    throw new Error(`${year} is an archived season and can't be edited`);
+  }
+  await firebaseStorage.updateUserList(year, ownerId, mutate);
 };
 
-export const subscribeToLists = (callback: (lists: ChristmasList[]) => void) => {
+export const subscribeToLists = (year: number, callback: (lists: ChristmasList[]) => void) => {
   try {
-    return firebaseStorage.subscribeToLists((lists) => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
+    return firebaseStorage.subscribeToLists(year, (lists) => {
+      localStorage.setItem(listsKey(year), JSON.stringify(lists));
       callback(lists);
     });
   } catch (error) {
     console.warn('Firebase subscription failed; serving cached lists:', error);
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(listsKey(year));
     callback(stored ? JSON.parse(stored) : []);
     return () => {};
   }
@@ -82,32 +90,35 @@ export const generateId = (): string => {
   return id.slice(0, 9);
 };
 
-export const getGiftsGiving = async (userId: string): Promise<GiftsGiving> => {
+export const getGiftsGiving = async (year: number, userId: string): Promise<GiftsGiving> => {
   try {
-    const data = await firebaseStorage.getGiftsGiving(userId);
-    localStorage.setItem(giftsKey(userId), JSON.stringify(data));
+    const data = await firebaseStorage.getGiftsGiving(year, userId);
+    localStorage.setItem(giftsKey(year, userId), JSON.stringify(data));
     return data;
   } catch (error) {
     console.warn('Firebase unavailable, using cached gifts:', error);
-    const stored = localStorage.getItem(giftsKey(userId));
+    const stored = localStorage.getItem(giftsKey(year, userId));
     return stored ? JSON.parse(stored) : { userId, gifts: {} };
   }
 };
 
-export const saveGiftsGiving = async (userId: string, data: GiftsGiving): Promise<void> => {
-  await firebaseStorage.saveGiftsGiving(userId, data);
-  localStorage.setItem(giftsKey(userId), JSON.stringify(data));
+export const saveGiftsGiving = async (year: number, userId: string, data: GiftsGiving): Promise<void> => {
+  if (isArchivedYear(year)) {
+    throw new Error(`${year} is an archived season and can't be edited`);
+  }
+  await firebaseStorage.saveGiftsGiving(year, userId, data);
+  localStorage.setItem(giftsKey(year, userId), JSON.stringify(data));
 };
 
-export const subscribeToGiftsGiving = (userId: string, callback: (data: GiftsGiving) => void) => {
+export const subscribeToGiftsGiving = (year: number, userId: string, callback: (data: GiftsGiving) => void) => {
   try {
-    return firebaseStorage.subscribeToGiftsGiving(userId, (data) => {
-      localStorage.setItem(giftsKey(userId), JSON.stringify(data));
+    return firebaseStorage.subscribeToGiftsGiving(year, userId, (data) => {
+      localStorage.setItem(giftsKey(year, userId), JSON.stringify(data));
       callback(data);
     });
   } catch (error) {
     console.warn('Firebase subscription failed; serving cached gifts:', error);
-    const stored = localStorage.getItem(giftsKey(userId));
+    const stored = localStorage.getItem(giftsKey(year, userId));
     callback(stored ? JSON.parse(stored) : { userId, gifts: {} });
     return () => {};
   }

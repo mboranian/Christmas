@@ -6,6 +6,9 @@ Everyone keeps their own wishlist. Anyone can browse someone else's list and che
 item they intend to buy, which quietly adds it to their own "Gifts I'm Giving" tracker so
 two people don't buy the same thing. Lists sync between devices in real time.
 
+Each Christmas is kept separately. The year picker beside "All Lists" switches seasons;
+only the current year can be edited, and earlier years are frozen as a record.
+
 Built with Create React App (React 19 + TypeScript), backed by Firebase Firestore, hosted
 on GitHub Pages.
 
@@ -27,9 +30,9 @@ CI=true npm test -- --watchAll=false   # once, as CI runs it
 npm run build                   # production build into ./build
 ```
 
-51 tests cover sign-in, the list and gift mutations, PDF export, password
-hashing, the error boundary, and the storage layer including the migration
-fallback. CI blocks a deploy when any of them fail, so they're the safety net
+67 tests cover sign-in, the list and gift mutations, PDF export, password
+hashing, the error boundary, the per-season paths and read-only archives, and
+the storage layer including the migration fallback. CI blocks a deploy when any of them fail, so they're the safety net
 for changes to this app.
 
 ## Deploying
@@ -75,11 +78,25 @@ which are identifiers rather than secrets.
 
 Three Firestore collections:
 
-| Collection | Shape | Holds |
-|---|---|---|
-| `christmas-lists` | one doc per user id | that user's wishlist |
-| `gifts-giving` | one doc per user id | what that person plans to give |
-| `user-prefs` | one doc per user id | small per-user settings |
+| Path | Holds |
+|---|---|
+| `christmas-lists/{userId}` | that user's **2025** wishlist |
+| `christmas-lists/{year}/lists/{userId}` | their wishlist for 2026 onward |
+| `gifts-giving/{userId}` | what they planned to give in **2025** |
+| `gifts-giving/{year}/users/{userId}` | what they plan to give in 2026 onward |
+| `user-prefs/{userId}` | small per-user settings, not year-specific |
+
+2025 keeps the original unversioned paths because its data predates the year
+picker — so adding seasons required no migration, and the archive can't be
+disturbed. Later seasons live in a subcollection under a year document. Both sit
+inside the existing top-level collections, so the recursive `{document=**}`
+security rules already cover them; no rules change was needed.
+
+Seasons come from `src/types/index.ts`: `FIRST_SEASON_YEAR` is 2025 and the
+current season is just `new Date().getFullYear()`, so the picker gains a year and
+the previous one freezes automatically each 1 January. Archived years are
+enforced in two places — the UI hides every control, and `storage.ts` throws on
+any write to a past year.
 
 Lists originally lived in a single `christmas-lists/all-lists` document holding
 an array of all seven, which meant two people editing at once overwrote each
@@ -127,7 +144,7 @@ src/
     storage.ts                app-facing API; localStorage cache + Firestore
     firebaseStorage.ts        Firestore reads/writes and subscriptions
     hash.ts                   SHA-256 via Web Crypto
-  types/index.ts              types, USERS roster, password hashes
+  types/index.ts              types, USERS roster, password hashes, season years
 ```
 
 `storage.ts` is the boundary. Reads go to Firestore and fall back to a localStorage

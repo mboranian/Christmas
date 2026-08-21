@@ -15,6 +15,8 @@ interface ChristmasItemComponentProps {
   itemIndex: number;
   totalItems: number;
   isReorderMode?: boolean;
+  /** Archived season: show the row, offer no controls. */
+  readOnly?: boolean;
 }
 
 const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
@@ -29,7 +31,8 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
   onReorderItem,
   itemIndex,
   totalItems,
-  isReorderMode = false
+  isReorderMode = false,
+  readOnly = false
 }) => {
   const isCheckedByCurrentUser = item.checkedBy.includes(currentUser.id);
   const checkedByCount = item.checkedBy.length;
@@ -286,7 +289,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                     Buy Here!
                   </a>
                 )}
-                {!isOwner && !isReorderMode && (
+                {!isOwner && !isReorderMode && !readOnly && (
                   <button
                     onClick={() => onToggleCheck(item.id)}
                     className={`check-button ${isCheckedByCurrentUser ? 'checked' : ''}`}
@@ -303,7 +306,7 @@ const ChristmasItemComponent: React.FC<ChristmasItemComponentProps> = ({
                     )}
                   </button>
                 )}
-                {isOwner && (onEditItem || onDeleteItem) && !isReorderMode && (
+                {isOwner && (onEditItem || onDeleteItem) && !isReorderMode && !readOnly && (
                   <div className="dropdown-menu">
                     <button 
                       ref={buttonRef}

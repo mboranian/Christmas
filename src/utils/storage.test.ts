@@ -1,6 +1,8 @@
 import * as storage from './storage';
 import { firebaseStorage } from './firebaseStorage';
-import { ChristmasList } from '../types';
+import { ChristmasList, CURRENT_SEASON_YEAR, FIRST_SEASON_YEAR } from '../types';
+
+const YEAR = CURRENT_SEASON_YEAR;
 
 jest.mock('./firebaseStorage');
 const fb = firebaseStorage as jest.Mocked<typeof firebaseStorage>;
@@ -21,24 +23,24 @@ afterEach(() => jest.restoreAllMocks());
 describe('reads fall back to the cache', () => {
   test('getAllLists caches what it fetched', async () => {
     fb.getAllLists.mockResolvedValue([LIST]);
-    await expect(storage.getAllLists()).resolves.toEqual([LIST]);
-    expect(JSON.parse(localStorage.getItem('christmas-lists')!)).toEqual([LIST]);
+    await expect(storage.getAllLists(YEAR)).resolves.toEqual([LIST]);
+    expect(JSON.parse(localStorage.getItem(`christmas-lists-${YEAR}`)!)).toEqual([LIST]);
   });
 
   test('getAllLists serves the cache when Firestore is unreachable', async () => {
-    localStorage.setItem('christmas-lists', JSON.stringify([LIST]));
+    localStorage.setItem(`christmas-lists-${YEAR}`, JSON.stringify([LIST]));
     fb.getAllLists.mockRejectedValue(new Error('offline'));
-    await expect(storage.getAllLists()).resolves.toEqual([LIST]);
+    await expect(storage.getAllLists(YEAR)).resolves.toEqual([LIST]);
   });
 
   test('getAllLists returns empty with no cache and no network', async () => {
     fb.getAllLists.mockRejectedValue(new Error('offline'));
-    await expect(storage.getAllLists()).resolves.toEqual([]);
+    await expect(storage.getAllLists(YEAR)).resolves.toEqual([]);
   });
 
   test('getGiftsGiving falls back to an empty structure', async () => {
     fb.getGiftsGiving.mockRejectedValue(new Error('offline'));
-    await expect(storage.getGiftsGiving('matthew')).resolves.toEqual({ userId: 'matthew', gifts: {} });
+    await expect(storage.getGiftsGiving(YEAR, 'matthew')).resolves.toEqual({ userId: 'matthew', gifts: {} });
   });
 });
 
@@ -47,15 +49,15 @@ describe('writes surface failures instead of hiding them', () => {
   // reported success for data that never left the device.
   test('updateUserList rejects when the transaction fails', async () => {
     fb.updateUserList.mockRejectedValue(new Error('permission-denied'));
-    await expect(storage.updateUserList('andy', () => LIST)).rejects.toThrow('permission-denied');
+    await expect(storage.updateUserList(YEAR, 'andy', () => LIST)).rejects.toThrow('permission-denied');
   });
 
   test('saveGiftsGiving rejects and does not cache a failed write', async () => {
     fb.saveGiftsGiving.mockRejectedValue(new Error('offline'));
     await expect(
-      storage.saveGiftsGiving('matthew', { userId: 'matthew', gifts: {} })
+      storage.saveGiftsGiving(YEAR, 'matthew', { userId: 'matthew', gifts: {} })
     ).rejects.toThrow('offline');
-    expect(localStorage.getItem('christmas-gifts-giving-matthew')).toBeNull();
+    expect(localStorage.getItem(`christmas-gifts-giving-${YEAR}-matthew`)).toBeNull();
   });
 
   test('saveUserPrefs rejects and does not cache a failed write', async () => {
@@ -67,8 +69,29 @@ describe('writes surface failures instead of hiding them', () => {
   test('a successful write is cached', async () => {
     fb.saveGiftsGiving.mockResolvedValue(undefined);
     const data = { userId: 'matthew', gifts: {} };
-    await storage.saveGiftsGiving('matthew', data);
-    expect(JSON.parse(localStorage.getItem('christmas-gifts-giving-matthew')!)).toEqual(data);
+    await storage.saveGiftsGiving(YEAR, 'matthew', data);
+    expect(JSON.parse(localStorage.getItem(`christmas-gifts-giving-${YEAR}-matthew`)!)).toEqual(data);
+  });
+});
+
+describe('archived seasons are read-only', () => {
+  test('updateUserList refuses a past year without touching Firestore', async () => {
+    await expect(
+      storage.updateUserList(FIRST_SEASON_YEAR, 'andy', () => LIST)
+    ).rejects.toThrow(/archived season/i);
+    expect(fb.updateUserList).not.toHaveBeenCalled();
+  });
+
+  test('saveGiftsGiving refuses a past year without touching Firestore', async () => {
+    await expect(
+      storage.saveGiftsGiving(FIRST_SEASON_YEAR, 'matthew', { userId: 'matthew', gifts: {} })
+    ).rejects.toThrow(/archived season/i);
+    expect(fb.saveGiftsGiving).not.toHaveBeenCalled();
+  });
+
+  test('reads from a past year still work', async () => {
+    fb.getAllLists.mockResolvedValue([LIST]);
+    await expect(storage.getAllLists(FIRST_SEASON_YEAR)).resolves.toEqual([LIST]);
   });
 });
 

@@ -7,6 +7,8 @@ interface GiftItemComponentProps {
   recipientId: string;
   onEditItem: (recipientId: string, giftItemId: string, updatedData: { title: string; link?: string; notes?: string }) => void;
   onDeleteItem: (recipientId: string, giftItemId: string) => void;
+  /** Archived season: show the row, offer no controls. */
+  readOnly?: boolean;
 }
 
 const GiftItemComponent: React.FC<GiftItemComponentProps> = ({
@@ -14,6 +16,7 @@ const GiftItemComponent: React.FC<GiftItemComponentProps> = ({
   recipientId,
   onEditItem,
   onDeleteItem,
+  readOnly = false,
 }) => {
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -237,7 +240,7 @@ const GiftItemComponent: React.FC<GiftItemComponentProps> = ({
               Buy Here!
             </a>
           )}
-          <div className="dropdown-menu">
+          {!readOnly && <div className="dropdown-menu">
             <button 
               ref={buttonRef}
               onClick={() => setShowDropdown(!showDropdown)}
@@ -251,7 +254,7 @@ const GiftItemComponent: React.FC<GiftItemComponentProps> = ({
               </svg>
             </button>
             {dropdownMenu}
-          </div>
+          </div>}
         </div>
       </div>
     </div>

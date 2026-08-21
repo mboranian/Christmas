@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BsFillGearFill } from "react-icons/bs";
-import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem } from '../types';
+import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem,
+  CURRENT_SEASON_YEAR, SEASON_YEARS, isArchivedYear } from '../types';
 import { updateUserList, generateId, getAllLists, subscribeToLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
@@ -29,6 +30,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const [anonymizeGivers, setAnonymizeGivers] = useState(false);
+  const [selectedYear, setSelectedYear] = useState<number>(CURRENT_SEASON_YEAR);
+
+  // Earlier seasons are readable but frozen — no adding, editing, reordering or
+  // checking off. storage.ts refuses writes to them as well.
+  const isArchive = isArchivedYear(selectedYear);
 
   // Helper to get the currently selected list
   const getSelectedList = () => {
@@ -46,8 +52,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       setIsLoading(true);
       try {
         const [lists, gifts, prefs] = await Promise.all([
-          getAllLists(),
-          getGiftsGiving(currentUser.id),
+          getAllLists(selectedYear),
+          getGiftsGiving(selectedYear, currentUser.id),
           getUserPrefs(currentUser.id)
         ]);
         setAllLists(lists);
@@ -65,7 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     loadAll();
 
     // Set up real-time listener for lists
-    const unsubscribeLists = subscribeToLists((lists) => {
+    const unsubscribeLists = subscribeToLists(selectedYear, (lists) => {
       if (process.env.NODE_ENV === 'development') {
         console.log('📡 Real-time update received (lists)');
       }
@@ -73,7 +79,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     });
 
     // Set up real-time listener for gifts giving
-    const unsubscribeGifts = subscribeToGiftsGiving(currentUser.id, (data) => {
+    const unsubscribeGifts = subscribeToGiftsGiving(selectedYear, currentUser.id, (data) => {
       if (process.env.NODE_ENV === 'development') {
         console.log('📡 Real-time update received (gifts giving)');
       }
@@ -93,7 +99,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       unsubscribeGifts();
       if (typeof unsubscribePrefs === 'function') unsubscribePrefs();
     };
-  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUser, selectedYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close settings menu when clicking outside or pressing Escape
   useEffect(() => {
@@ -135,6 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   // Wraps a write so a rejection becomes a visible message instead of a
   // console line nobody reads.
   const runWrite = async (what: string, write: () => Promise<unknown>) => {
+    if (isArchive) return;
     setIsSyncing(true);
     setSaveError(null);
     try {
@@ -150,7 +157,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
 
   const createNewList = async () => {
     await runWrite('create your list', () =>
-      updateUserList(currentUser.id, (current) => current ?? {
+      updateUserList(selectedYear, currentUser.id, (current) => current ?? {
         id: generateId(),
         ownerId: currentUser.id,
         ownerName: currentUser.name,
@@ -184,7 +191,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
 
     setShowAddForm(false);
     await runWrite('add that item', () =>
-      updateUserList(currentUser.id, (current) => {
+      updateUserList(selectedYear, currentUser.id, (current) => {
         const list = current ?? emptyList();
         return { ...list, items: [...list.items, newItem] };
       })
@@ -195,7 +202,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     if (selectedUserId !== currentUser.id) return;
 
     await runWrite('delete that item', () =>
-      updateUserList(currentUser.id, (current) => {
+      updateUserList(selectedYear, currentUser.id, (current) => {
         const list = current ?? emptyList();
         return { ...list, items: list.items.filter(item => item.id !== itemId) };
       })
@@ -206,7 +213,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     if (selectedUserId !== currentUser.id) return;
 
     await runWrite('save that change', () =>
-      updateUserList(currentUser.id, (current) => {
+      updateUserList(selectedYear, currentUser.id, (current) => {
         const list = current ?? emptyList();
         return {
           ...list,
@@ -227,7 +234,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     if (selectedUserId !== currentUser.id) return;
 
     await runWrite('reorder your list', () =>
-      updateUserList(currentUser.id, (current) => {
+      updateUserList(selectedYear, currentUser.id, (current) => {
         const list = current ?? emptyList();
         const items = [...list.items];
         const from = items.findIndex(item => item.id === draggedId);
@@ -250,7 +257,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     let checkedItem: ChristmasItem | null = null;
 
     await runWrite(checked ? 'check that item' : 'uncheck that item', async () => {
-      await updateUserList(listOwnerId, (current) => {
+      await updateUserList(selectedYear, listOwnerId, (current) => {
         // Firestore re-runs this callback if the document changed underneath us,
         // so reset per-attempt state rather than carrying it over.
         changed = false;
@@ -279,7 +286,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // someone else's list — you don't gift yourself.
       if (!changed || !isSomeoneElsesList) return;
 
-      const currentGifts = await getGiftsGiving(currentUser.id);
+      const currentGifts = await getGiftsGiving(selectedYear, currentUser.id);
       const updatedGifts = { ...currentGifts, gifts: { ...currentGifts.gifts } };
       const existing = updatedGifts.gifts[listOwnerId] || [];
 
@@ -299,7 +306,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         updatedGifts.gifts[listOwnerId] = existing.filter(g => g.sourceItemId !== itemId);
       }
 
-      await saveGiftsGiving(currentUser.id, updatedGifts);
+      await saveGiftsGiving(selectedYear, currentUser.id, updatedGifts);
     });
   };
 
@@ -328,7 +335,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       if (notes && notes.trim()) giftItem.notes = notes.trim();
 
       // Fetch latest gifts data to avoid overwriting other changes
-      const currentGifts = await getGiftsGiving(currentUser.id);
+      const currentGifts = await getGiftsGiving(selectedYear, currentUser.id);
       const updatedGifts = { ...currentGifts };
       if (!updatedGifts.gifts[recipientId]) {
         updatedGifts.gifts[recipientId] = [];
@@ -338,7 +345,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       // Optimistically update UI from local state so user sees the new gift immediately
       setGiftsGiving(updatedGifts);
 
-      await saveGiftsGiving(currentUser.id, updatedGifts);
+      await saveGiftsGiving(selectedYear, currentUser.id, updatedGifts);
       // Real-time listener will also reconcile when Firestore update arrives
     } catch (error) {
       console.error('Error adding gift item:', error);
@@ -352,7 +359,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setIsSyncing(true);
     try {
       // Fetch latest gifts data to avoid overwriting other changes
-      const currentGifts = await getGiftsGiving(currentUser.id);
+      const currentGifts = await getGiftsGiving(selectedYear, currentUser.id);
       const updatedGifts = { ...currentGifts };
       if (updatedGifts.gifts[recipientId]) {
         updatedGifts.gifts[recipientId] = updatedGifts.gifts[recipientId].map(gift => {
@@ -371,7 +378,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         });
         // Optimistically update UI
         setGiftsGiving(updatedGifts);
-        await saveGiftsGiving(currentUser.id, updatedGifts);
+        await saveGiftsGiving(selectedYear, currentUser.id, updatedGifts);
         // Real-time listener will reconcile with server state when available
       }
     } catch (error) {
@@ -386,7 +393,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setIsSyncing(true);
     try {
       // Fetch latest gifts data to avoid overwriting other changes
-      const currentGifts = await getGiftsGiving(currentUser.id);
+      const currentGifts = await getGiftsGiving(selectedYear, currentUser.id);
       const updatedGifts = { ...currentGifts };
       if (updatedGifts.gifts[recipientId]) {
         // Find the gift to check if it came from checking their list
@@ -397,7 +404,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         );
         // Optimistically update UI
         setGiftsGiving(updatedGifts);
-        await saveGiftsGiving(currentUser.id, updatedGifts);
+        await saveGiftsGiving(selectedYear, currentUser.id, updatedGifts);
 
         // If this gift came from checking an item on their list, uncheck it
         if (giftToDelete && giftToDelete.source === 'checked' && giftToDelete.sourceItemId) {
@@ -569,6 +576,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         </div>
       </header>
 
+      {isArchive && (
+        <div className="archive-notice">
+          Viewing the {selectedYear} lists. Past years are kept as a record and can't be changed.
+        </div>
+      )}
+
       {saveError && (
         <div className="save-error" role="alert">
           <span>{saveError}</span>
@@ -593,7 +606,29 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
         
         <aside className={`sidebar ${isMobileMenuOpen ? 'sidebar-mobile-open' : ''}`}>
           <nav className="sidebar-nav">
-            <h3>All Lists</h3>
+            <div className="sidebar-heading">
+              <h3>All Lists</h3>
+              <label className="year-picker">
+                <span className="sr-only">Christmas year</span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => {
+                    setSelectedYear(Number(e.target.value));
+                    // A different season means different lists; drop view state
+                    // that referred to the old one.
+                    setIsReorderMode(false);
+                    setShowAddForm(false);
+                    setActiveGiftFormRecipient(null);
+                    setSaveError(null);
+                  }}
+                  aria-label="Christmas year"
+                >
+                  {SEASON_YEARS.map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {[currentUser, ...USERS.filter(user => user.id !== currentUser.id)].map(user => (
               <button 
                 key={user.id}
@@ -652,8 +687,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
             return (
               <div className="list-section">
                 <div className="section-header">
-                  <h2>{selectedUser.name === currentUser.name ? 'My Christmas List' : `${selectedUser.name}'s List`}</h2>
-                  {isOwner && selectedList && (
+                  <h2>
+                    {selectedUser.name === currentUser.name ? 'My Christmas List' : `${selectedUser.name}'s List`}
+                    {isArchive && <span className="year-badge">{selectedYear}</span>}
+                  </h2>
+                  {isOwner && selectedList && !isArchive && (
                     <div className="header-buttons">
                       <button 
                         onClick={() => setShowAddForm(true)} 
@@ -673,7 +711,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                   )}
                 </div>
 
-                {!selectedList && isOwner ? (
+                {!selectedList && isOwner && isArchive ? (
+                  <div className="empty-state">
+                    <p>You didn't have a list in {selectedYear}.</p>
+                  </div>
+                ) : !selectedList && isOwner ? (
                   <div className="empty-state">
                     <p>You haven't created your Christmas list yet!</p>
                     <button 
@@ -686,7 +728,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                   </div>
                 ) : !selectedList ? (
                   <div className="empty-state">
-                    <p>{selectedUser.name} hasn't created their Christmas list yet.</p>
+                    <p>
+                      {isArchive
+                        ? `${selectedUser.name} didn't have a list in ${selectedYear}.`
+                        : `${selectedUser.name} hasn't created their Christmas list yet.`}
+                    </p>
                   </div>
                 ) : (
                   <>
@@ -712,10 +758,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                             currentUser={currentUser}
                             listOwner={selectedUser}
                             anonymizeGivers={anonymizeGivers}
-                            onToggleCheck={isOwner ? () => {} : (itemId) => toggleItemCheck(selectedUserId, itemId)}
-                            onDeleteItem={isOwner ? deleteItem : undefined}
-                            onEditItem={isOwner ? editItem : undefined}
-                            onReorderItem={isOwner ? reorderItem : undefined}
+                            readOnly={isArchive}
+                            onToggleCheck={isOwner || isArchive ? () => {} : (itemId) => toggleItemCheck(selectedUserId, itemId)}
+                            onDeleteItem={isOwner && !isArchive ? deleteItem : undefined}
+                            onEditItem={isOwner && !isArchive ? editItem : undefined}
+                            onReorderItem={isOwner && !isArchive ? reorderItem : undefined}
                             itemIndex={index}
                             totalItems={selectedList.items.length}
                             isReorderMode={isReorderMode}
@@ -744,7 +791,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
           })() : (
             <div className="gifts-giving-section">
               <div className="section-header">
-                <h2>Gifts I'm Giving</h2>
+                <h2>
+                  Gifts I'm Giving
+                  {isArchive && <span className="year-badge">{selectedYear}</span>}
+                </h2>
               </div>
               
               {USERS.filter(user => user.id !== currentUser.id).map(recipient => {
@@ -755,16 +805,18 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                   <div key={recipient.id} className="recipient-section">
                     <h3>{recipient.name}</h3>
                     
-                    <button 
-                      onClick={() => setActiveGiftFormRecipient(isFormOpen ? null : recipient.id)} 
-                      className="add-item-button"
-                      disabled={isSyncing}
-                      style={{marginBottom: '12px'}}
-                    >
-                      {isFormOpen ? 'Cancel' : '+ Add Gift'}
-                    </button>
+                    {!isArchive && (
+                      <button
+                        onClick={() => setActiveGiftFormRecipient(isFormOpen ? null : recipient.id)}
+                        className="add-item-button"
+                        disabled={isSyncing}
+                        style={{marginBottom: '12px'}}
+                      >
+                        {isFormOpen ? 'Cancel' : '+ Add Gift'}
+                      </button>
+                    )}
                     
-                    {isFormOpen && (
+                    {isFormOpen && !isArchive && (
                       <div className="add-item-section" style={{marginBottom: '12px'}}>
                         <AddItemForm 
                           onAddItem={(itemData) => {
@@ -785,6 +837,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                             key={gift.id}
                             gift={gift}
                             recipientId={recipient.id}
+                            readOnly={isArchive}
                             onEditItem={editGiftItem}
                             onDeleteItem={deleteGiftItem}
                           />

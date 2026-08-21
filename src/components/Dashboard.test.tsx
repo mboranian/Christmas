@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Dashboard from './Dashboard';
-import { ChristmasList, GiftsGiving, User } from '../types';
+import { ChristmasList, GiftsGiving, User,
+  CURRENT_SEASON_YEAR, FIRST_SEASON_YEAR, SEASON_YEARS } from '../types';
 import * as storage from '../utils/storage';
 
 jest.mock('../utils/storage');
@@ -60,12 +61,12 @@ beforeEach(() => {
   mocked.saveUserPrefs.mockImplementation(async () => {});
   mocked.generateId.mockImplementation(() => 'generated-id');
 
-  mocked.saveGiftsGiving.mockImplementation(async (_userId, data) => {
+  mocked.saveGiftsGiving.mockImplementation(async (_year, _userId, data) => {
     gifts = copy(data);
   });
   // Stands in for the Firestore transaction: the mutator always sees the
   // current server state, never a copy the component read earlier.
-  mocked.updateUserList.mockImplementation(async (ownerId, mutate) => {
+  mocked.updateUserList.mockImplementation(async (_year, ownerId, mutate) => {
     const current = lists.find((l) => l.ownerId === ownerId) ?? null;
     const next = mutate(current ? copy(current) : null);
     const i = lists.findIndex((l) => l.ownerId === ownerId);
@@ -73,11 +74,11 @@ beforeEach(() => {
     else lists.push(copy(next));
   });
 
-  mocked.subscribeToLists.mockImplementation((cb) => {
+  mocked.subscribeToLists.mockImplementation((_year, cb) => {
     cb(copy(lists));
     return () => {};
   });
-  mocked.subscribeToGiftsGiving.mockImplementation((_userId, cb) => {
+  mocked.subscribeToGiftsGiving.mockImplementation((_year, _userId, cb) => {
     cb(copy(gifts));
     return () => {};
   });
@@ -406,4 +407,95 @@ test('a blocked popup is reported rather than failing silently', async () => {
 
   expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/popup blocked/i));
   alertSpy.mockRestore();
+});
+
+// --- seasons ---------------------------------------------------------------
+//
+// Years come from the constants, never literals, so these keep meaning after
+// the calendar rolls over.
+
+const ARCHIVE_YEAR = FIRST_SEASON_YEAR;
+
+test('the picker offers every season, newest first, defaulting to this one', async () => {
+  renderDashboard();
+  const picker = (await screen.findByLabelText('Christmas year')) as HTMLSelectElement;
+
+  expect(Array.from(picker.options).map((o) => Number(o.value))).toEqual(SEASON_YEARS);
+  expect(Number(picker.value)).toBe(CURRENT_SEASON_YEAR);
+  expect(SEASON_YEARS[0]).toBe(CURRENT_SEASON_YEAR);
+});
+
+test('choosing a season loads that season’s data', async () => {
+  renderDashboard();
+  await screen.findByText('Gloves');
+  expect(mocked.getAllLists).toHaveBeenCalledWith(CURRENT_SEASON_YEAR);
+
+  fireEvent.change(screen.getByLabelText('Christmas year'), {
+    target: { value: String(ARCHIVE_YEAR) },
+  });
+
+  await waitFor(() => expect(mocked.getAllLists).toHaveBeenCalledWith(ARCHIVE_YEAR));
+  await waitFor(() => expect(mocked.subscribeToLists).toHaveBeenCalledWith(ARCHIVE_YEAR, expect.any(Function)));
+});
+
+describe('an archived season is read-only', () => {
+  beforeEach(() => {
+    // Guard against a clock where there is no past season to test.
+    expect(ARCHIVE_YEAR).toBeLessThan(CURRENT_SEASON_YEAR);
+  });
+
+  async function viewArchive() {
+    renderDashboard();
+    await screen.findByText('Gloves');
+    fireEvent.change(screen.getByLabelText('Christmas year'), {
+      target: { value: String(ARCHIVE_YEAR) },
+    });
+    await screen.findByText(new RegExp(`viewing the ${ARCHIVE_YEAR} lists`, 'i'));
+  }
+
+  test('says so, and drops the add and reorder controls', async () => {
+    await viewArchive();
+
+    expect(screen.getByText(/can't be changed/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add item/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/change order/i)).not.toBeInTheDocument();
+  });
+
+  test('own items offer no edit or delete menu', async () => {
+    await viewArchive();
+    expect(screen.queryAllByTitle('More options')).toHaveLength(0);
+  });
+
+  test("another person's items cannot be checked off", async () => {
+    await viewArchive();
+    fireEvent.click(screen.getByRole('button', { name: /^andy$/i }));
+
+    await screen.findByText('Wool socks');
+    expect(screen.queryByTitle(/getting this for Andy/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/not getting this/i)).not.toBeInTheDocument();
+  });
+
+  test('no gifts can be added', async () => {
+    await viewArchive();
+    fireEvent.click(await screen.findByRole('button', { name: /gifts i'm giving/i }));
+
+    // 'Andy' also matches the sidebar tab; scope to the recipient heading.
+    await screen.findByRole('heading', { name: 'Andy' });
+    expect(screen.queryAllByText('+ Add Gift')).toHaveLength(0);
+  });
+
+  test('the list is still readable and exportable', async () => {
+    const { written } = stubPrintWindow();
+    await viewArchive();
+
+    expect(screen.getByText('Gloves')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/export as pdf/i));
+    expect(written.join('')).toContain('Gloves');
+  });
+
+  test('no write reaches storage even if one were attempted', async () => {
+    await viewArchive();
+    expect(mocked.updateUserList).not.toHaveBeenCalled();
+    expect(mocked.saveGiftsGiving).not.toHaveBeenCalled();
+  });
 });

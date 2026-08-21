@@ -13,7 +13,7 @@ import {
   DocumentData
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { ChristmasList, GiftsGiving } from '../types';
+import { ChristmasList, GiftsGiving, FIRST_SEASON_YEAR } from '../types';
 
 // Chatty progress logging is useful while developing and is noise (and a small
 // privacy leak — these payloads contain gift data) in the deployed app.
@@ -37,6 +37,30 @@ const USER_PREFS_COLLECTION = 'user-prefs';
 // make their first edit. Once every owner has a document, all-lists is inert
 // and can be deleted by hand.
 const LEGACY_LISTS_DOCUMENT = 'all-lists';
+
+// 2025's data predates per-year storage and stays at the original paths, so
+// nothing has to be migrated and the archive can't be disturbed. Later seasons
+// live in a subcollection under a year document.
+//
+//   2025:  christmas-lists/{userId}            gifts-giving/{userId}
+//   2026+: christmas-lists/{year}/lists/{id}   gifts-giving/{year}/users/{id}
+//
+// Both stay inside the existing top-level collections, so the recursive
+// {document=**} rules already cover them — no Firestore rules change needed.
+const isLegacyYear = (year: number) => year === FIRST_SEASON_YEAR;
+
+const listsPath = (year: number): [string] | [string, string, string] =>
+  isLegacyYear(year) ? [LISTS_COLLECTION] : [LISTS_COLLECTION, String(year), 'lists'];
+
+const listDocPath = (year: number, userId: string): string[] =>
+  isLegacyYear(year)
+    ? [LISTS_COLLECTION, userId]
+    : [LISTS_COLLECTION, String(year), 'lists', userId];
+
+const giftsDocPath = (year: number, userId: string): string[] =>
+  isLegacyYear(year)
+    ? [GIFTS_GIVING_COLLECTION, userId]
+    : [GIFTS_GIVING_COLLECTION, String(year), 'users', userId];
 
 /** Per-user documents win; the legacy array fills in owners not yet migrated. */
 const mergeSnapshot = (snapshot: QuerySnapshot<DocumentData>): ChristmasList[] => {
@@ -68,10 +92,12 @@ export class FirebaseStorage {
    * stale copy read before someone else's change landed.
    */
   async updateUserList(
+    year: number,
     ownerId: string,
     mutate: (current: ChristmasList | null) => ChristmasList
   ): Promise<ChristmasList> {
-    const listRef = doc(db, LISTS_COLLECTION, ownerId);
+    const [c, ...rest] = listDocPath(year, ownerId);
+    const listRef = doc(db, c, ...rest);
     const legacyRef = doc(db, LISTS_COLLECTION, LEGACY_LISTS_DOCUMENT);
 
     return runTransaction(db, async (tx) => {
@@ -80,7 +106,7 @@ export class FirebaseStorage {
       let current: ChristmasList | null = null;
       if (snap.exists()) {
         current = snap.data() as ChristmasList;
-      } else {
+      } else if (isLegacyYear(year)) {
         // First write for this owner — seed from the legacy document so their
         // existing items aren't dropped.
         const legacySnap = await tx.get(legacyRef);
@@ -96,21 +122,24 @@ export class FirebaseStorage {
     });
   }
 
-  async getAllLists(): Promise<ChristmasList[]> {
-    const snapshot = await getDocs(collection(db, LISTS_COLLECTION));
-    debug(`📖 Read ${snapshot.size} list document(s)`);
+  async getAllLists(year: number): Promise<ChristmasList[]> {
+    const [c, ...rest] = listsPath(year);
+    const snapshot = await getDocs(collection(db, c, ...rest));
+    debug(`📖 Read ${snapshot.size} list document(s) for ${year}`);
     return mergeSnapshot(snapshot);
   }
 
-  subscribeToLists(callback: (lists: ChristmasList[]) => void): Unsubscribe {
+  subscribeToLists(year: number, callback: (lists: ChristmasList[]) => void): Unsubscribe {
     if (this.unsubscribe) {
       this.unsubscribe();
     }
 
     let previous: string | null = null;
 
+    const [c, ...rest] = listsPath(year);
+
     this.unsubscribe = onSnapshot(
-      collection(db, LISTS_COLLECTION),
+      collection(db, c, ...rest),
       (snapshot) => {
         const lists = mergeSnapshot(snapshot);
         const serialized = JSON.stringify(lists);
@@ -148,22 +177,25 @@ export class FirebaseStorage {
     debug('🌐 Firebase is now online');
   }
 
-  async saveGiftsGiving(userId: string, giftsData: GiftsGiving): Promise<void> {
-    await setDoc(doc(db, GIFTS_GIVING_COLLECTION, userId), {
+  async saveGiftsGiving(year: number, userId: string, giftsData: GiftsGiving): Promise<void> {
+    const [c, ...rest] = giftsDocPath(year, userId);
+    await setDoc(doc(db, c, ...rest), {
       ...giftsData,
       lastUpdated: Date.now()
     });
     debug(`✅ Saved gifts-giving for ${userId}`);
   }
 
-  async getGiftsGiving(userId: string): Promise<GiftsGiving> {
-    const snap = await getDoc(doc(db, GIFTS_GIVING_COLLECTION, userId));
+  async getGiftsGiving(year: number, userId: string): Promise<GiftsGiving> {
+    const [c, ...rest] = giftsDocPath(year, userId);
+    const snap = await getDoc(doc(db, c, ...rest));
     return snap.exists() ? (snap.data() as GiftsGiving) : { userId, gifts: {} };
   }
 
-  subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
+  subscribeToGiftsGiving(year: number, userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
+    const [c, ...rest] = giftsDocPath(year, userId);
     return onSnapshot(
-      doc(db, GIFTS_GIVING_COLLECTION, userId),
+      doc(db, c, ...rest),
       (snap) => {
         callback(snap.exists() ? (snap.data() as GiftsGiving) : { userId, gifts: {} });
       },
