@@ -9,9 +9,13 @@ const USER_PREFS_KEY_PREFIX = 'christmas-user-prefs-';
 const giftsKey = (userId: string) => `${GIFTS_GIVING_KEY_PREFIX}${userId}`;
 const prefsKey = (userId: string) => `${USER_PREFS_KEY_PREFIX}${userId}`;
 
-// Every function here reads Firestore first and falls back to the localStorage
-// cache if it's unreachable, and writes localStorage first so the UI stays
-// responsive (and usable offline) even when a sync fails.
+// Reads fall back to the localStorage cache when Firestore is unreachable, so
+// the app still renders offline.
+//
+// Writes do NOT fall back. They used to cache locally and swallow the Firestore
+// error as a console warning, which meant the UI reported success for data that
+// never left the device — and the next snapshot silently overwrote it. Now a
+// failed write rejects and the caller surfaces it.
 
 // Sign-in is per-device, so it never leaves localStorage.
 export const getCurrentUser = (): User | null => {
@@ -39,33 +43,19 @@ export const getAllLists = async (): Promise<ChristmasList[]> => {
   }
 };
 
-export const saveLists = async (lists: ChristmasList[]): Promise<void> => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
-
-  try {
-    await firebaseStorage.saveLists(lists);
-  } catch (error) {
-    // localStorage already has it, so the app keeps working.
-    console.warn('Firebase save failed; lists saved locally only:', error);
-  }
-};
-
-export const getUserList = async (userId: string): Promise<ChristmasList | undefined> => {
-  const lists = await getAllLists();
-  return lists.find(list => list.ownerId === userId);
-};
-
-export const createOrUpdateUserList = async (list: ChristmasList): Promise<void> => {
-  const lists = await getAllLists();
-  const existingIndex = lists.findIndex(l => l.ownerId === list.ownerId);
-
-  if (existingIndex >= 0) {
-    lists[existingIndex] = list;
-  } else {
-    lists.push(list);
-  }
-
-  await saveLists(lists);
+/**
+ * Apply a change to one owner's list. The mutator receives the list as it
+ * currently exists on the server — never a copy read earlier — and the whole
+ * read-modify-write runs in a transaction, so simultaneous edits retry instead
+ * of overwriting each other.
+ *
+ * Rejects if the write doesn't land. Callers must handle that.
+ */
+export const updateUserList = async (
+  ownerId: string,
+  mutate: (current: ChristmasList | null) => ChristmasList
+): Promise<void> => {
+  await firebaseStorage.updateUserList(ownerId, mutate);
 };
 
 export const subscribeToLists = (callback: (lists: ChristmasList[]) => void) => {
@@ -99,13 +89,8 @@ export const getGiftsGiving = async (userId: string): Promise<GiftsGiving> => {
 };
 
 export const saveGiftsGiving = async (userId: string, data: GiftsGiving): Promise<void> => {
+  await firebaseStorage.saveGiftsGiving(userId, data);
   localStorage.setItem(giftsKey(userId), JSON.stringify(data));
-
-  try {
-    await firebaseStorage.saveGiftsGiving(userId, data);
-  } catch (error) {
-    console.warn('Firebase save failed; gifts saved locally only:', error);
-  }
 };
 
 export const subscribeToGiftsGiving = (userId: string, callback: (data: GiftsGiving) => void) => {
@@ -135,13 +120,8 @@ export const getUserPrefs = async (userId: string): Promise<Record<string, any>>
 };
 
 export const saveUserPrefs = async (userId: string, prefs: Record<string, any>): Promise<void> => {
+  await firebaseStorage.saveUserPrefs(userId, prefs);
   localStorage.setItem(prefsKey(userId), JSON.stringify(prefs));
-
-  try {
-    await firebaseStorage.saveUserPrefs(userId, prefs);
-  } catch (error) {
-    console.warn('Firebase save failed; prefs saved locally only:', error);
-  }
 };
 
 export const subscribeToUserPrefs = (userId: string, callback: (data: Record<string, any>) => void) => {

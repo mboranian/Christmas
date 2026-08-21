@@ -22,6 +22,13 @@ beforeEach(() => {
   // Andy's list has an item that NOBODY has checked...
   lists = [
     {
+      id: 'list-matthew',
+      ownerId: 'matthew',
+      ownerName: 'Matthew',
+      createdAt: 1,
+      items: [{ id: 'mine-1', title: 'Gloves', checkedBy: [], createdAt: 1 }],
+    },
+    {
       id: 'list-andy',
       ownerId: 'andy',
       ownerName: 'Andy',
@@ -56,8 +63,14 @@ beforeEach(() => {
   mocked.saveGiftsGiving.mockImplementation(async (_userId, data) => {
     gifts = copy(data);
   });
-  mocked.createOrUpdateUserList.mockImplementation(async (list) => {
-    lists = lists.map((l) => (l.ownerId === list.ownerId ? copy(list) : l));
+  // Stands in for the Firestore transaction: the mutator always sees the
+  // current server state, never a copy the component read earlier.
+  mocked.updateUserList.mockImplementation(async (ownerId, mutate) => {
+    const current = lists.find((l) => l.ownerId === ownerId) ?? null;
+    const next = mutate(current ? copy(current) : null);
+    const i = lists.findIndex((l) => l.ownerId === ownerId);
+    if (i >= 0) lists[i] = copy(next);
+    else lists.push(copy(next));
   });
 
   mocked.subscribeToLists.mockImplementation((cb) => {
@@ -104,4 +117,42 @@ test('removing a gift does not resurrect it as a new gift', async () => {
   await waitFor(() => {
     expect(gifts.gifts.andy ?? []).toEqual([]);
   });
+});
+
+test('an edit builds on server state, not the copy the page loaded with', async () => {
+  render(<Dashboard currentUser={MATTHEW} onSignOut={() => {}} />);
+  await screen.findByText('Gloves');
+
+  // Another device adds an item after this page rendered. The component's own
+  // state still shows one item; the server now has two.
+  lists = lists.map((l) =>
+    l.ownerId !== 'matthew'
+      ? l
+      : { ...l, items: [...l.items, { id: 'mine-2', title: 'Scarf', checkedBy: [], createdAt: 2 }] }
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: /add item/i }));
+  fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Boots' } });
+  fireEvent.click(screen.getByRole('button', { name: /^add item$/i }));
+
+  await waitFor(() => expect(mocked.updateUserList).toHaveBeenCalled());
+
+  // All three survive. Writing back a stale local copy would have lost 'Scarf'.
+  await waitFor(() => {
+    const titles = lists.find((l) => l.ownerId === 'matthew')!.items.map((i) => i.title);
+    expect(titles).toEqual(['Gloves', 'Scarf', 'Boots']);
+  });
+});
+
+test('a failed write tells the user instead of looking saved', async () => {
+  mocked.updateUserList.mockRejectedValue(new Error('offline'));
+
+  render(<Dashboard currentUser={MATTHEW} onSignOut={() => {}} />);
+  await screen.findByText('Gloves');
+
+  fireEvent.click(screen.getByRole('button', { name: /add item/i }));
+  fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'Boots' } });
+  fireEvent.click(screen.getByRole('button', { name: /^add item$/i }));
+
+  expect(await screen.findByText(/wasn't saved/i)).toBeInTheDocument();
 });

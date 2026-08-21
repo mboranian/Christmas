@@ -71,9 +71,21 @@ Three Firestore collections:
 
 | Collection | Shape | Holds |
 |---|---|---|
-| `christmas-lists` | one doc, `all-lists` | every user's wishlist |
+| `christmas-lists` | one doc per user id | that user's wishlist |
 | `gifts-giving` | one doc per user id | what that person plans to give |
 | `user-prefs` | one doc per user id | small per-user settings |
+
+Lists originally lived in a single `christmas-lists/all-lists` document holding
+an array of all seven, which meant two people editing at once overwrote each
+other. They're now one document per user, written inside a transaction. The old
+document is still read as a fallback, so a user's entry there is used until they
+make their first edit — at which point their own document takes over. Once every
+name has its own document, `all-lists` is inert and can be deleted from the
+console.
+
+Writes reject if they don't reach Firestore, and the app shows a banner saying
+the change wasn't saved. That means edits now fail while offline rather than
+appearing to succeed and then vanishing.
 
 Security rules aren't in this repo — they're edited in the Firebase console. See
 [FIRESTORE_RULES_SETUP.md](FIRESTORE_RULES_SETUP.md) for the current setup and how to
@@ -111,5 +123,7 @@ src/
   types/index.ts              types, USERS roster, password hashes
 ```
 
-`storage.ts` writes to localStorage first and Firestore second, so the app keeps working
-offline and falls back to the local copy if Firestore is unreachable.
+`storage.ts` is the boundary. Reads go to Firestore and fall back to a localStorage
+cache when it's unreachable, so the app still renders offline. Writes go to Firestore
+only — they used to cache locally and swallow the error, which reported success for
+data that never left the device.

@@ -1647,3 +1647,33 @@ textarea.edit-notes-input {
     flex: none; /* buttons keep their intrinsic/fixed size and don't shrink/grow */
   }
 }
+
+/* Failed-write notice. Writes used to fail silently; this is the surface for it. */
+.save-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 20px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  color: #b3261e;
+  font-size: 0.95rem;
+}
+
+.save-error-dismiss {
+  flex: none;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.save-error-dismiss:hover {
+  background: rgba(0, 0, 0, 0.06);
+}

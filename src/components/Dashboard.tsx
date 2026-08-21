@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BsFillGearFill } from "react-icons/bs";
 import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem } from '../types';
-import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
+import { updateUserList, generateId, getAllLists, subscribeToLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
 import GiftItemComponent from './GiftItemComponent';
@@ -19,6 +19,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
   const [viewMode, setViewMode] = useState<'lists' | 'giftsGiving'>('lists');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  // Write failures used to be swallowed by the storage layer. They now reject,
+  // so the UI has to say so rather than pretending the change stuck.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -129,29 +132,48 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const createNewList = async () => {
-    const newList: ChristmasList = {
-      id: generateId(),
-      ownerId: currentUser.id,
-      ownerName: currentUser.name,
-      items: [],
-      createdAt: Date.now(),
-    };
-
+  // Wraps a write so a rejection becomes a visible message instead of a
+  // console line nobody reads.
+  const runWrite = async (what: string, write: () => Promise<unknown>) => {
     setIsSyncing(true);
+    setSaveError(null);
     try {
-      await createOrUpdateUserList(newList);
-      // The real-time listener updates the UI; no refetch needed.
+      await write();
+      // The real-time listener refreshes the UI; no refetch needed.
     } catch (error) {
-      console.error('Error creating list:', error);
+      console.error(`Error ${what}:`, error);
+      setSaveError(`Couldn't ${what} — your change wasn't saved. Check your connection and try again.`);
     } finally {
       setIsSyncing(false);
     }
   };
 
+  const createNewList = async () => {
+    await runWrite('create your list', () =>
+      updateUserList(currentUser.id, (current) => current ?? {
+        id: generateId(),
+        ownerId: currentUser.id,
+        ownerName: currentUser.name,
+        items: [],
+        createdAt: Date.now(),
+      })
+    );
+  };
+
+  // Every edit below hands `updateUserList` a function rather than a finished
+  // list. That function runs against whatever the server holds at write time,
+  // inside a transaction — so an edit is never built on a copy read before
+  // someone else's change landed.
+  const emptyList = (): ChristmasList => ({
+    id: generateId(),
+    ownerId: currentUser.id,
+    ownerName: currentUser.name,
+    items: [],
+    createdAt: Date.now(),
+  });
+
   const addItem = async (itemData: Omit<ChristmasItem, 'id' | 'checkedBy' | 'createdAt'>) => {
-    const currentList = getSelectedList();
-    if (!currentList || selectedUserId !== currentUser.id) return;
+    if (selectedUserId !== currentUser.id) return;
 
     const newItem: ChristmasItem = {
       ...itemData,
@@ -160,171 +182,125 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
       createdAt: Date.now(),
     };
 
-    const updatedList = {
-      ...currentList,
-      items: [...currentList.items, newItem],
-    };
-
     setShowAddForm(false);
-    setIsSyncing(true);
-    try {
-      await createOrUpdateUserList(updatedList);
-      // Real-time listener will update the UI automatically
-    } catch (error) {
-      console.error('Error adding item:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWrite('add that item', () =>
+      updateUserList(currentUser.id, (current) => {
+        const list = current ?? emptyList();
+        return { ...list, items: [...list.items, newItem] };
+      })
+    );
   };
 
   const deleteItem = async (itemId: string) => {
-    const currentList = getSelectedList();
-    if (!currentList || selectedUserId !== currentUser.id) return;
+    if (selectedUserId !== currentUser.id) return;
 
-    const updatedList = {
-      ...currentList,
-      items: currentList.items.filter((item: ChristmasItem) => item.id !== itemId),
-    };
-
-    setIsSyncing(true);
-    try {
-      await createOrUpdateUserList(updatedList);
-      // Real-time listener will update the UI automatically
-    } catch (error) {
-      console.error('Error deleting item:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWrite('delete that item', () =>
+      updateUserList(currentUser.id, (current) => {
+        const list = current ?? emptyList();
+        return { ...list, items: list.items.filter(item => item.id !== itemId) };
+      })
+    );
   };
 
   const editItem = async (itemId: string, updatedData: { title: string; link?: string; notes?: string }) => {
-    const currentList = getSelectedList();
-    if (!currentList || selectedUserId !== currentUser.id) return;
+    if (selectedUserId !== currentUser.id) return;
 
-    const updatedList = {
-      ...currentList,
-      items: currentList.items.map((item: ChristmasItem) => {
-        if (item.id === itemId) {
-          const updated = { ...item, ...updatedData };
-          // Remove properties that are explicitly set to undefined
-          if (updatedData.link === undefined) {
-            delete updated.link;
-          }
-          if (updatedData.notes === undefined) {
-            delete updated.notes;
-          }
-          return updated;
-        }
-        return item;
-      }),
-    };
-
-    setIsSyncing(true);
-    try {
-      await createOrUpdateUserList(updatedList);
-      // Real-time listener will update the UI automatically
-    } catch (error) {
-      console.error('Error editing item:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWrite('save that change', () =>
+      updateUserList(currentUser.id, (current) => {
+        const list = current ?? emptyList();
+        return {
+          ...list,
+          items: list.items.map(item => {
+            if (item.id !== itemId) return item;
+            const updated = { ...item, ...updatedData };
+            // Firestore rejects undefined, so drop rather than blank them.
+            if (updatedData.link === undefined) delete updated.link;
+            if (updatedData.notes === undefined) delete updated.notes;
+            return updated;
+          }),
+        };
+      })
+    );
   };
 
   const reorderItem = async (draggedId: string, targetId: string) => {
-    const currentList = getSelectedList();
-    if (!currentList || selectedUserId !== currentUser.id) return;
+    if (selectedUserId !== currentUser.id) return;
 
-    const items = [...currentList.items];
-    const draggedIndex = items.findIndex(item => item.id === draggedId);
-    const targetIndex = items.findIndex(item => item.id === targetId);
-    
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    // Remove dragged item and insert at target position
-    const [draggedItem] = items.splice(draggedIndex, 1);
-    items.splice(targetIndex, 0, draggedItem);
-
-    const updatedList = {
-      ...currentList,
-      items,
-    };
-
-    setIsSyncing(true);
-    try {
-      await createOrUpdateUserList(updatedList);
-      // Real-time listener will update the UI automatically
-    } catch (error) {
-      console.error('Error reordering items:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWrite('reorder your list', () =>
+      updateUserList(currentUser.id, (current) => {
+        const list = current ?? emptyList();
+        const items = [...list.items];
+        const from = items.findIndex(item => item.id === draggedId);
+        const to = items.findIndex(item => item.id === targetId);
+        // The item may have gone since the drag began; leave the order alone.
+        if (from === -1 || to === -1) return list;
+        const [moved] = items.splice(from, 1);
+        items.splice(to, 0, moved);
+        return { ...list, items };
+      })
+    );
   };
 
   // Set an item's checked state explicitly. Idempotent: asking for the state it
   // is already in does nothing, so callers that need a definite outcome (like
   // removing a gift) cannot accidentally flip it the other way.
   const setItemChecked = async (listOwnerId: string, itemId: string, checked: boolean) => {
-    setIsSyncing(true);
-    try {
-      const lists = await getAllLists();
-      const list = lists.find(l => l.ownerId === listOwnerId);
-      if (!list) return;
+    const isSomeoneElsesList = listOwnerId !== currentUser.id;
+    let changed = false;
+    let checkedItem: ChristmasItem | null = null;
 
-      const item = list.items.find(i => i.id === itemId);
-      if (!item) return;
+    await runWrite(checked ? 'check that item' : 'uncheck that item', async () => {
+      await updateUserList(listOwnerId, (current) => {
+        // Firestore re-runs this callback if the document changed underneath us,
+        // so reset per-attempt state rather than carrying it over.
+        changed = false;
+        checkedItem = null;
 
-      if (item.checkedBy.includes(currentUser.id) === checked) return;
+        if (!current) throw new Error(`No list for ${listOwnerId}`);
 
-      const isSomeoneElsesList = listOwnerId !== currentUser.id;
+        const item = current.items.find(i => i.id === itemId);
+        if (!item) throw new Error(`No item ${itemId}`);
+        if (item.checkedBy.includes(currentUser.id) === checked) return current;
 
-      if (checked) {
-        item.checkedBy = [...item.checkedBy, currentUser.id];
+        changed = true;
+        checkedItem = item;
+        return {
+          ...current,
+          items: current.items.map(i => i.id !== itemId ? i : {
+            ...i,
+            checkedBy: checked
+              ? [...i.checkedBy, currentUser.id]
+              : i.checkedBy.filter(userId => userId !== currentUser.id),
+          }),
+        };
+      });
 
-        // Checking someone else's item also records it as a gift you're giving.
-        if (isSomeoneElsesList) {
-          const giftItem: GiftItem = {
-            id: generateId(),
-            title: item.title,
-            source: 'checked',
-            sourceItemId: itemId,
-            createdAt: Date.now()
-          };
-          // Firestore rejects undefined, so only set these when they have values.
-          if (item.link) giftItem.link = item.link;
-          if (item.notes) giftItem.notes = item.notes;
+      // Only mirror into gifts-giving if the check actually moved, and only for
+      // someone else's list — you don't gift yourself.
+      if (!changed || !isSomeoneElsesList) return;
 
-          // Re-read first so we don't clobber changes made elsewhere.
-          const currentGifts = await getGiftsGiving(currentUser.id);
-          const updatedGifts = { ...currentGifts };
-          if (!updatedGifts.gifts[listOwnerId]) {
-            updatedGifts.gifts[listOwnerId] = [];
-          }
-          updatedGifts.gifts[listOwnerId].push(giftItem);
-          await saveGiftsGiving(currentUser.id, updatedGifts);
-        }
+      const currentGifts = await getGiftsGiving(currentUser.id);
+      const updatedGifts = { ...currentGifts, gifts: { ...currentGifts.gifts } };
+      const existing = updatedGifts.gifts[listOwnerId] || [];
+
+      if (checked && checkedItem) {
+        const giftItem: GiftItem = {
+          id: generateId(),
+          title: checkedItem.title,
+          source: 'checked',
+          sourceItemId: itemId,
+          createdAt: Date.now(),
+        };
+        // Firestore rejects undefined, so only set these when they have values.
+        if (checkedItem.link) giftItem.link = checkedItem.link;
+        if (checkedItem.notes) giftItem.notes = checkedItem.notes;
+        updatedGifts.gifts[listOwnerId] = [...existing, giftItem];
       } else {
-        item.checkedBy = item.checkedBy.filter(userId => userId !== currentUser.id);
-
-        // Unchecking drops the matching gift, if one is still recorded.
-        if (isSomeoneElsesList) {
-          const currentGifts = await getGiftsGiving(currentUser.id);
-          const updatedGifts = { ...currentGifts };
-          if (updatedGifts.gifts[listOwnerId]) {
-            updatedGifts.gifts[listOwnerId] = updatedGifts.gifts[listOwnerId].filter(
-              gift => gift.sourceItemId !== itemId
-            );
-            await saveGiftsGiving(currentUser.id, updatedGifts);
-          }
-        }
+        updatedGifts.gifts[listOwnerId] = existing.filter(g => g.sourceItemId !== itemId);
       }
 
-      await createOrUpdateUserList(list);
-      // Real-time listener will update the UI automatically
-    } catch (error) {
-      console.error('Error updating item check state:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+      await saveGiftsGiving(currentUser.id, updatedGifts);
+    });
   };
 
   // Flip whichever state the viewer is currently looking at.
@@ -592,6 +568,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
           )}
         </div>
       </header>
+
+      {saveError && (
+        <div className="save-error" role="alert">
+          <span>{saveError}</span>
+          <button
+            className="save-error-dismiss"
+            onClick={() => setSaveError(null)}
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       <div className="dashboard-layout">
         {/* Mobile backdrop */}

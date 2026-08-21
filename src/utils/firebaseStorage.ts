@@ -1,11 +1,16 @@
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
-  enableNetwork, 
+import {
+  doc,
+  collection,
+  setDoc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  runTransaction,
+  enableNetwork,
   disableNetwork,
-  Unsubscribe 
+  Unsubscribe,
+  QuerySnapshot,
+  DocumentData
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { ChristmasList, GiftsGiving } from '../types';
@@ -19,207 +24,111 @@ const debug = (...args: unknown[]) => {
 };
 
 const LISTS_COLLECTION = 'christmas-lists';
-const LISTS_DOCUMENT = 'all-lists';
 const GIFTS_GIVING_COLLECTION = 'gifts-giving';
 const USER_PREFS_COLLECTION = 'user-prefs';
 
+// Lists used to live in a single christmas-lists/all-lists document holding an
+// array of everyone's lists, which meant every edit rewrote all seven and two
+// people editing at once clobbered each other. Each list now lives in its own
+// christmas-lists/{ownerId} document.
+//
+// The legacy document is still read, so nothing has to be migrated up front: a
+// per-user document shadows the legacy entry for that owner as soon as they
+// make their first edit. Once every owner has a document, all-lists is inert
+// and can be deleted by hand.
+const LEGACY_LISTS_DOCUMENT = 'all-lists';
+
+/** Per-user documents win; the legacy array fills in owners not yet migrated. */
+const mergeSnapshot = (snapshot: QuerySnapshot<DocumentData>): ChristmasList[] => {
+  const perUser: ChristmasList[] = [];
+  let legacy: ChristmasList[] = [];
+
+  snapshot.forEach((docSnap) => {
+    if (docSnap.id === LEGACY_LISTS_DOCUMENT) {
+      legacy = (docSnap.data().lists as ChristmasList[]) || [];
+    } else {
+      perUser.push(docSnap.data() as ChristmasList);
+    }
+  });
+
+  const migrated = new Set(perUser.map(list => list.ownerId));
+  return [...perUser, ...legacy.filter(list => !migrated.has(list.ownerId))];
+};
+
 export class FirebaseStorage {
   private unsubscribe: Unsubscribe | null = null;
-  private lastSavedData: string | null = null;
-  private isSaving = false;
-  private saveQueue: ChristmasList[] | null = null;
 
   /**
-   * Save all lists to Firestore (with deduplication to prevent loops)
+   * Apply a change to one owner's list inside a transaction, so a concurrent
+   * write to the same document retries against fresh data instead of
+   * overwriting it. Returns the list as written.
+   *
+   * Callers pass a mutator rather than a finished list: the mutator receives
+   * whatever the server currently holds, so an edit can never be based on a
+   * stale copy read before someone else's change landed.
    */
-  async saveLists(lists: ChristmasList[]): Promise<void> {
-    const currentData = JSON.stringify(lists);
-    
-    // If already saving, queue this data for next save
-    if (this.isSaving) {
-      this.saveQueue = lists;
-      debug('⏳ Save in progress, queuing data...');
-      return;
-    }
+  async updateUserList(
+    ownerId: string,
+    mutate: (current: ChristmasList | null) => ChristmasList
+  ): Promise<ChristmasList> {
+    const listRef = doc(db, LISTS_COLLECTION, ownerId);
+    const legacyRef = doc(db, LISTS_COLLECTION, LEGACY_LISTS_DOCUMENT);
 
-    // Check if data actually changed to prevent unnecessary saves
-    if (this.lastSavedData === currentData) {
-      debug('🔄 Skipping save - data unchanged');
-      return;
-    }
-    
-      debug('💾 Saving new data to Firebase...');
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(listRef);
 
-    this.isSaving = true;
-    try {
-      await setDoc(doc(db, LISTS_COLLECTION, LISTS_DOCUMENT), {
-        lists,
-        lastUpdated: Date.now()
-      });
-      this.lastSavedData = currentData;
-      
-      // Only log in development
-      debug('✅ Successfully saved lists to Firebase');
-      
-      // If there's queued data that's different, save it
-      if (this.saveQueue && JSON.stringify(this.saveQueue) !== currentData) {
-        const queuedLists = this.saveQueue;
-        this.saveQueue = null;
-        this.isSaving = false; // Reset flag before recursive call
-        await this.saveLists(queuedLists);
-        return;
-      }
-    } catch (error) {
-      console.error('❌ Error saving lists to Firebase:', error);
-      throw error;
-    } finally {
-      this.isSaving = false;
-      this.saveQueue = null;
-    }
-  }
-
-  /**
-   * Save user preferences (arbitrary small object) for a specific user
-   */
-  async saveUserPrefs(userId: string, prefs: Record<string, any>): Promise<void> {
-    try {
-      const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-      debug(`💾 Attempting to save prefs for ${userId} to Firestore:`, prefs);
-      await setDoc(docRef, {
-        ...prefs,
-        lastUpdated: Date.now()
-      });
-      debug(`✅ Successfully saved prefs for ${userId} to Firestore`);
-    } catch (error: any) {
-      console.error('❌ Error saving user prefs to Firestore:', error);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED: You need to update Firestore security rules!');
-        console.error('Go to Firebase Console > Firestore Database > Rules and allow read/write');
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Get user preferences for a specific user (one-time read)
-   */
-  async getUserPrefs(userId: string): Promise<Record<string, any>> {
-    try {
-      const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-      debug(`📖 Attempting to read prefs for ${userId} from Firestore`);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Record<string, any>;
-        debug(`✅ Successfully fetched prefs for ${userId}:`, data);
-        return data;
+      let current: ChristmasList | null = null;
+      if (snap.exists()) {
+        current = snap.data() as ChristmasList;
       } else {
-        debug(`📝 No prefs found for ${userId} in Firestore, returning empty`);
-        return {};
+        // First write for this owner — seed from the legacy document so their
+        // existing items aren't dropped.
+        const legacySnap = await tx.get(legacyRef);
+        if (legacySnap.exists()) {
+          const legacy = (legacySnap.data().lists as ChristmasList[]) || [];
+          current = legacy.find(list => list.ownerId === ownerId) || null;
+        }
       }
-    } catch (error: any) {
-      console.error('❌ Error fetching user prefs from Firestore:', error);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED: You need to update Firestore security rules!');
-      }
-      throw error;
-    }
-  }
 
-  /**
-   * Subscribe to real-time updates for a user's prefs
-   */
-  subscribeToUserPrefs(userId: string, callback: (data: Record<string, any>) => void) {
-    const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-    debug(`🔔 Setting up real-time listener for prefs (${userId})`);
-    const unsubscribe = onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as Record<string, any>;
-        debug(`🔄 Real-time update for prefs (${userId}):`, data);
-        callback(data);
-      } else {
-        debug(`📝 Real-time update: No prefs doc exists for ${userId}`);
-        callback({});
-      }
-    }, (error: any) => {
-      console.error('❌ Error in prefs listener:', error);
-      console.error('Error code:', error?.code);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED for real-time listener!');
-      }
+      const next = mutate(current);
+      tx.set(listRef, { ...next, lastUpdated: Date.now() });
+      return next;
     });
-
-    return unsubscribe;
   }
 
-  /**
-   * Get all lists from Firestore (one-time fetch)
-   */
   async getAllLists(): Promise<ChristmasList[]> {
-    try {
-      const docRef = doc(db, LISTS_COLLECTION, LISTS_DOCUMENT);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        
-        // Only log in development
-      debug('✅ Successfully fetched lists from Firebase');
-        return data.lists || [];
-      } else {
-      debug('📝 No lists found in Firebase, starting fresh');
-        return [];
-      }
-    } catch (error) {
-      console.error('❌ Error fetching lists from Firebase:', error);
-      throw error;
-    }
+    const snapshot = await getDocs(collection(db, LISTS_COLLECTION));
+    debug(`📖 Read ${snapshot.size} list document(s)`);
+    return mergeSnapshot(snapshot);
   }
 
-  /**
-   * Subscribe to real-time updates for all lists
-   */
   subscribeToLists(callback: (lists: ChristmasList[]) => void): Unsubscribe {
-    // Prevent multiple subscriptions
     if (this.unsubscribe) {
       this.unsubscribe();
     }
 
-    const docRef = doc(db, LISTS_COLLECTION, LISTS_DOCUMENT);
-    let lastReceivedData: string | null = null;
-    
-    this.unsubscribe = onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        const currentData = JSON.stringify(data.lists || []);
-        
-        // Only trigger callback if data actually changed
-        if (lastReceivedData !== currentData) {
-          lastReceivedData = currentData;
-          
-          // Only log in development and throttle logs
-      debug('🔄 Real-time update received from Firebase');
-          callback(data.lists || []);
-        }
-      } else {
-      debug('📝 No document exists, starting with empty lists');
-        callback([]);
+    let previous: string | null = null;
+
+    this.unsubscribe = onSnapshot(
+      collection(db, LISTS_COLLECTION),
+      (snapshot) => {
+        const lists = mergeSnapshot(snapshot);
+        const serialized = JSON.stringify(lists);
+        // Firestore echoes our own writes back; skip identical payloads so the
+        // UI doesn't re-render for no reason.
+        if (serialized === previous) return;
+        previous = serialized;
+        debug('🔄 Real-time update received (lists)');
+        callback(lists);
+      },
+      (error) => {
+        console.error('Error in lists listener:', error);
       }
-    }, (error) => {
-      console.error('❌ Error in real-time listener:', error);
-      // Don't throw here, just log - the app should continue working
-    });
+    );
 
     return this.unsubscribe;
   }
 
-
-  /**
-   * Check if Firebase is available (network connectivity)
-   */
   async isOnline(): Promise<boolean> {
     try {
       await enableNetwork(db);
@@ -229,110 +138,65 @@ export class FirebaseStorage {
     }
   }
 
-  /**
-   * Force offline mode (useful for testing)
-   */
   async goOffline(): Promise<void> {
-    try {
-      await disableNetwork(db);
-      debug('📴 Firebase is now offline');
-    } catch (error) {
-      console.error('Error going offline:', error);
-    }
+    await disableNetwork(db);
+    debug('📴 Firebase is now offline');
   }
 
-  /**
-   * Force online mode
-   */
   async goOnline(): Promise<void> {
-    try {
-      await enableNetwork(db);
-      debug('🌐 Firebase is now online');
-    } catch (error) {
-      console.error('Error going online:', error);
-    }
+    await enableNetwork(db);
+    debug('🌐 Firebase is now online');
   }
 
-  /**
-   * Save gifts giving data for a specific user
-   */
   async saveGiftsGiving(userId: string, giftsData: GiftsGiving): Promise<void> {
-    try {
-      const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-      debug(`💾 Attempting to save gifts-giving for ${userId} to Firestore`);
-      await setDoc(docRef, {
-        ...giftsData,
-        lastUpdated: Date.now()
-      });
-      debug(`✅ Successfully saved gifts-giving for ${userId} to Firestore`);
-    } catch (error: any) {
-      console.error('❌ Error saving gifts-giving to Firestore:', error);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving!');
-        console.error('Check that gifts-giving collection is allowed in Firestore Rules');
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Get gifts giving data for a specific user
-   */
-  async getGiftsGiving(userId: string): Promise<GiftsGiving> {
-    try {
-      const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-      debug(`📖 Attempting to read gifts-giving for ${userId} from Firestore`);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data() as GiftsGiving;
-        debug(`✅ Successfully fetched gifts-giving for ${userId} from Firestore`);
-        return data;
-      } else {
-        // Return empty structure if no data exists
-        debug(`📝 No gifts-giving data for ${userId} in Firestore, starting fresh`);
-        return { userId, gifts: {} };
-      }
-    } catch (error: any) {
-      console.error('❌ Error fetching gifts-giving from Firestore:', error);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving!');
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Subscribe to real-time updates for a user's gifts giving data
-   */
-  subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
-    const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-    debug(`🔔 Setting up real-time listener for gifts-giving (${userId})`);
-    
-    const unsubscribe = onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as GiftsGiving;
-        debug(`🔄 Real-time update for gifts-giving (${userId})`);
-        callback(data);
-      } else {
-        debug(`📝 Real-time update: No gifts-giving doc exists for ${userId}`);
-        callback({ userId, gifts: {} });
-      }
-    }, (error: any) => {
-      console.error('❌ Error in gifts-giving listener:', error);
-      console.error('Error code:', error?.code);
-      if (error?.code === 'permission-denied') {
-        console.error('⚠️ FIRESTORE PERMISSION DENIED for gifts-giving listener!');
-      }
+    await setDoc(doc(db, GIFTS_GIVING_COLLECTION, userId), {
+      ...giftsData,
+      lastUpdated: Date.now()
     });
+    debug(`✅ Saved gifts-giving for ${userId}`);
+  }
 
-    return unsubscribe;
+  async getGiftsGiving(userId: string): Promise<GiftsGiving> {
+    const snap = await getDoc(doc(db, GIFTS_GIVING_COLLECTION, userId));
+    return snap.exists() ? (snap.data() as GiftsGiving) : { userId, gifts: {} };
+  }
+
+  subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
+    return onSnapshot(
+      doc(db, GIFTS_GIVING_COLLECTION, userId),
+      (snap) => {
+        callback(snap.exists() ? (snap.data() as GiftsGiving) : { userId, gifts: {} });
+      },
+      (error) => {
+        console.error('Error in gifts-giving listener:', error);
+      }
+    );
+  }
+
+  async saveUserPrefs(userId: string, prefs: Record<string, any>): Promise<void> {
+    await setDoc(doc(db, USER_PREFS_COLLECTION, userId), {
+      ...prefs,
+      lastUpdated: Date.now()
+    });
+    debug(`✅ Saved prefs for ${userId}`);
+  }
+
+  async getUserPrefs(userId: string): Promise<Record<string, any>> {
+    const snap = await getDoc(doc(db, USER_PREFS_COLLECTION, userId));
+    return snap.exists() ? (snap.data() as Record<string, any>) : {};
+  }
+
+  subscribeToUserPrefs(userId: string, callback: (data: Record<string, any>) => void): Unsubscribe {
+    return onSnapshot(
+      doc(db, USER_PREFS_COLLECTION, userId),
+      (snap) => {
+        callback(snap.exists() ? (snap.data() as Record<string, any>) : {});
+      },
+      (error) => {
+        console.error('Error in prefs listener:', error);
+      }
+    );
   }
 }
 
-// Export singleton instance
 export const firebaseStorage = new FirebaseStorage();
