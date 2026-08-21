@@ -73,7 +73,13 @@ export const subscribeToLists = (callback: (lists: ChristmasList[]) => void) => 
 };
 
 export const generateId = (): string => {
-  return Math.random().toString(36).slice(2, 11);
+  // Math.random().toString(36) is usually ~13 chars but can be shorter, which
+  // would yield a stunted id. Keep drawing until there are enough characters.
+  let id = '';
+  while (id.length < 9) {
+    id += Math.random().toString(36).slice(2);
+  }
+  return id.slice(0, 9);
 };
 
 export const getGiftsGiving = async (userId: string): Promise<GiftsGiving> => {

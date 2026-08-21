@@ -156,3 +156,254 @@ test('a failed write tells the user instead of looking saved', async () => {
 
   expect(await screen.findByText(/wasn't saved/i)).toBeInTheDocument();
 });
+
+// --- helpers for the tests below -------------------------------------------
+
+function setMatthewItems(items: { id: string; title: string; checkedBy?: string[] }[]) {
+  lists = lists.map((l) =>
+    l.ownerId !== 'matthew'
+      ? l
+      : { ...l, items: items.map((i, n) => ({ checkedBy: [], createdAt: n + 1, ...i })) }
+  );
+}
+
+const matthewItems = () => lists.find((l) => l.ownerId === 'matthew')!.items;
+const andyItems = () => lists.find((l) => l.ownerId === 'andy')!.items;
+
+function renderDashboard() {
+  return render(<Dashboard currentUser={MATTHEW} onSignOut={() => {}} />);
+}
+
+async function openFirstItemMenu() {
+  fireEvent.click((await screen.findAllByTitle('More options'))[0]);
+}
+
+// --- own-list mutations ----------------------------------------------------
+
+test('editing an item saves the new title and drops cleared fields', async () => {
+  setMatthewItems([{ id: 'a', title: 'Gloves' }]);
+  renderDashboard();
+  await screen.findByText('Gloves');
+
+  await openFirstItemMenu();
+  fireEvent.click(await screen.findByText('Edit'));
+
+  fireEvent.change(screen.getByPlaceholderText('Item name'), { target: { value: 'Warm gloves' } });
+  fireEvent.click(screen.getByText('Save'));
+
+  await waitFor(() => expect(matthewItems()[0].title).toBe('Warm gloves'));
+  // Link and notes were left blank, so they must not be persisted as undefined —
+  // Firestore rejects undefined values.
+  expect('link' in matthewItems()[0]).toBe(false);
+  expect('notes' in matthewItems()[0]).toBe(false);
+});
+
+test('deleting an item removes only that item', async () => {
+  setMatthewItems([{ id: 'a', title: 'Gloves' }, { id: 'b', title: 'Scarf' }]);
+  renderDashboard();
+  await screen.findByText('Gloves');
+
+  await openFirstItemMenu();
+  fireEvent.click(await screen.findByText('Delete'));
+
+  await waitFor(() => expect(matthewItems().map((i) => i.title)).toEqual(['Scarf']));
+});
+
+test('reordering moves the dragged item to the target position', async () => {
+  setMatthewItems([
+    { id: 'a', title: 'Gloves' },
+    { id: 'b', title: 'Scarf' },
+    { id: 'c', title: 'Boots' },
+  ]);
+  renderDashboard();
+  await screen.findByText('Boots');
+
+  fireEvent.click(screen.getByText(/change order/i));
+
+  // Drag 'Boots' onto 'Gloves'.
+  const rows = document.querySelectorAll('.christmas-item');
+  fireEvent.drop(rows[0], { dataTransfer: { getData: () => 'c' } });
+
+  await waitFor(() =>
+    expect(matthewItems().map((i) => i.title)).toEqual(['Boots', 'Gloves', 'Scarf'])
+  );
+});
+
+test('a reorder referencing a since-deleted item leaves the order alone', async () => {
+  setMatthewItems([{ id: 'a', title: 'Gloves' }, { id: 'b', title: 'Scarf' }]);
+  renderDashboard();
+  await screen.findByText('Scarf');
+
+  fireEvent.click(screen.getByText(/change order/i));
+  const rows = document.querySelectorAll('.christmas-item');
+  fireEvent.drop(rows[0], { dataTransfer: { getData: () => 'gone' } });
+
+  await waitFor(() => expect(mocked.updateUserList).toHaveBeenCalled());
+  expect(matthewItems().map((i) => i.title)).toEqual(['Gloves', 'Scarf']);
+});
+
+test('creating a list when none exists', async () => {
+  lists = lists.filter((l) => l.ownerId !== 'matthew');
+  renderDashboard();
+
+  fireEvent.click(await screen.findByText(/create my list/i));
+
+  await waitFor(() => expect(lists.some((l) => l.ownerId === 'matthew')).toBe(true));
+  expect(lists.find((l) => l.ownerId === 'matthew')!.items).toEqual([]);
+});
+
+// --- checking someone else's list -> gifts-giving ---------------------------
+
+async function openAndysList() {
+  fireEvent.click(await screen.findByRole('button', { name: /^andy$/i }));
+}
+
+test("checking an item on someone else's list records a gift", async () => {
+  gifts = { userId: 'matthew', gifts: {} };
+  renderDashboard();
+  await openAndysList();
+
+  fireEvent.click(await screen.findByTitle(/getting this for Andy/i));
+
+  await waitFor(() => expect(andyItems()[0].checkedBy).toEqual(['matthew']));
+  await waitFor(() => {
+    const mine = gifts.gifts.andy || [];
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ title: 'Wool socks', source: 'checked', sourceItemId: 'item-1' });
+  });
+});
+
+test('unchecking removes the gift it created', async () => {
+  lists = lists.map((l) =>
+    l.ownerId !== 'andy' ? l : { ...l, items: [{ ...l.items[0], checkedBy: ['matthew'] }] }
+  );
+  renderDashboard();
+  await openAndysList();
+
+  fireEvent.click(await screen.findByTitle(/not getting this/i));
+
+  await waitFor(() => expect(andyItems()[0].checkedBy).toEqual([]));
+  await waitFor(() => expect(gifts.gifts.andy || []).toEqual([]));
+});
+
+test('a check does not write undefined link or notes to Firestore', async () => {
+  gifts = { userId: 'matthew', gifts: {} };
+  renderDashboard();
+  await openAndysList();
+
+  fireEvent.click(await screen.findByTitle(/getting this for Andy/i));
+
+  await waitFor(() => expect(gifts.gifts.andy).toHaveLength(1));
+  const gift = gifts.gifts.andy[0];
+  expect('link' in gift).toBe(false);
+  expect('notes' in gift).toBe(false);
+});
+
+// --- gifts-giving view -----------------------------------------------------
+
+async function openGiftsGiving() {
+  fireEvent.click(await screen.findByRole('button', { name: /gifts i'm giving/i }));
+}
+
+test('adding a manual gift stores it against the recipient', async () => {
+  gifts = { userId: 'matthew', gifts: {} };
+  renderDashboard();
+  await openGiftsGiving();
+
+  fireEvent.click((await screen.findAllByText('+ Add Gift'))[0]);
+  fireEvent.change(screen.getByLabelText(/item name/i), { target: { value: 'A book' } });
+  fireEvent.click(screen.getByRole('button', { name: /^add item$/i }));
+
+  await waitFor(() => {
+    const forAndy = gifts.gifts.andy || [];
+    expect(forAndy).toHaveLength(1);
+    expect(forAndy[0]).toMatchObject({ title: 'A book', source: 'manual' });
+  });
+});
+
+// --- settings --------------------------------------------------------------
+
+test('the anonymize toggle persists and hides giver names', async () => {
+  lists = lists.map((l) =>
+    l.ownerId !== 'andy' ? l : { ...l, items: [{ ...l.items[0], checkedBy: ['elena'] }] }
+  );
+  renderDashboard();
+  await openAndysList();
+
+  // Named by default.
+  expect(await screen.findByText(/Elena's got this/i)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByLabelText('Settings'));
+  fireEvent.click(screen.getByLabelText('Anonymize Gift Givers'));
+
+  await waitFor(() =>
+    expect(mocked.saveUserPrefs).toHaveBeenCalledWith('matthew', { anonymizeGivers: true })
+  );
+  expect(await screen.findByText(/Santa's got this/i)).toBeInTheDocument();
+  expect(screen.queryByText(/Elena's got this/i)).not.toBeInTheDocument();
+});
+
+// --- PDF export ------------------------------------------------------------
+
+function stubPrintWindow() {
+  const written: string[] = [];
+  const fake = {
+    document: { open: () => {}, write: (h: string) => written.push(h), close: () => {} },
+    focus: () => {},
+    print: jest.fn(),
+  };
+  jest.spyOn(window, 'open').mockReturnValue(fake as unknown as Window);
+  return { written, fake };
+}
+
+test('exporting builds a printable page listing every item', async () => {
+  setMatthewItems([{ id: 'a', title: 'Gloves' }, { id: 'b', title: 'Scarf' }]);
+  const { written } = stubPrintWindow();
+
+  renderDashboard();
+  fireEvent.click(await screen.findByText(/export as pdf/i));
+
+  const html = written.join('');
+  expect(html).toContain('Matthew - Christmas List');
+  expect(html).toContain('1. Gloves');
+  expect(html).toContain('2. Scarf');
+});
+
+test('exporting escapes titles so a list cannot inject markup', async () => {
+  setMatthewItems([{ id: 'a', title: '<script>alert(1)</script>' }]);
+  const { written } = stubPrintWindow();
+
+  renderDashboard();
+  fireEvent.click(await screen.findByText(/export as pdf/i));
+
+  const html = written.join('');
+  expect(html).not.toContain('<script>alert(1)</script>');
+  expect(html).toContain('&lt;script&gt;');
+});
+
+test('exporting an empty list warns instead of opening a window', async () => {
+  setMatthewItems([]);
+  const openSpy = jest.spyOn(window, 'open');
+  const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+
+  renderDashboard();
+  await screen.findByText(/no items in your list yet/i);
+
+  // The button is disabled for an empty list, so drive the handler directly.
+  const button = screen.getByRole('button', { name: /export .* as pdf/i });
+  expect(button).toBeDisabled();
+  expect(openSpy).not.toHaveBeenCalled();
+  alertSpy.mockRestore();
+});
+
+test('a blocked popup is reported rather than failing silently', async () => {
+  setMatthewItems([{ id: 'a', title: 'Gloves' }]);
+  jest.spyOn(window, 'open').mockReturnValue(null);
+  const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {});
+
+  renderDashboard();
+  fireEvent.click(await screen.findByText(/export as pdf/i));
+
+  expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/popup blocked/i));
+  alertSpy.mockRestore();
+});

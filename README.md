@@ -22,9 +22,14 @@ Runs on **port 3001** (not CRA's default 3000 — set in the `start` script). `.
 `BROWSER=none` so it won't grab a browser window on start.
 
 ```bash
-npm test          # watch mode
-npm run build     # production build into ./build
+npm test                        # watch mode
+CI=true npm test -- --watchAll=false   # once, as CI runs it
+npm run build                   # production build into ./build
 ```
+
+47 tests cover sign-in, the list and gift mutations, PDF export, password
+hashing, and the storage layer including the migration fallback. CI blocks a
+deploy when any of them fail, so they're the safety net for changes to this app.
 
 ## Deploying
 
