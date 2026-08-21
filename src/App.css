@@ -1516,11 +1516,6 @@ textarea.edit-notes-input {
     gap: 10px;
   }
 
-  .nav-tab {
-    padding: 15px 20px;
-    font-size: 0.9rem;
-  }
-
   /* Smaller mobile adjustments */
   .sidebar {
     width: 220px;
