@@ -1,46 +1,115 @@
-# Getting Started with Create React App
+# Christmas Lists
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A shared Christmas wishlist app for the family, live at **[780christmas.com](https://780christmas.com)**.
 
-## Available Scripts
+Everyone keeps their own wishlist. Anyone can browse someone else's list and check off an
+item they intend to buy, which quietly adds it to their own "Gifts I'm Giving" tracker so
+two people don't buy the same thing. Lists sync between devices in real time.
 
-In the project directory, you can run:
+Built with Create React App (React 19 + TypeScript), backed by Firebase Firestore, hosted
+on GitHub Pages.
 
-### `npm start`
+---
 
-Runs the app in the development mode.\
-Open [http://localhost:3001](http://localhost:3001) to view it in the browser.
+## Running locally
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+```bash
+npm install
+npm start
+```
 
-### `npm test`
+Runs on **port 3001** (not CRA's default 3000 — set in the `start` script). `.env` sets
+`BROWSER=none` so it won't grab a browser window on start.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+npm test          # watch mode
+npm run build     # production build into ./build
+```
 
-### `npm run build`
+## Deploying
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+**Push to `main` and you're done.** [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
+runs the tests, builds, and publishes to GitHub Pages. Nothing needs to be built or
+committed by hand.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Two things worth knowing:
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- **Lint warnings fail the build.** Actions sets `CI=true`, and CRA escalates warnings to
+  errors under CI. An unused variable is enough to block a deploy. Run
+  `CI=true npm run build` locally if you want to check before pushing.
+- **The custom domain lives in [`public/CNAME`](public/CNAME).** CRA copies `public/` into
+  the build output, so the domain survives each deploy. Don't delete that file.
 
-### `npm run eject`
+Pages is configured to deploy from GitHub Actions (Settings → Pages → Source). Earlier
+versions of this repo committed the built site into a `docs/` folder and served it from the
+branch — that's gone, and build output is no longer tracked in git.
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+## Adding or changing a family member
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Two steps, both in [`src/types/index.ts`](src/types/index.ts):
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+1. Add an entry to `USERS` with a lowercase `id` and a display `name`.
+2. Add a matching SHA-256 password hash to `USER_PASSWORD_HASHES`, keyed by that same `id`.
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+Generate the hash with:
 
-## Learn More
+```bash
+echo -n "theirpassword" | shasum -a 256
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+There's no signup flow and no Firebase Auth — the roster is hardcoded, and sign-in just
+compares a SHA-256 hash of what was typed against the table. Missing a hash for a user
+means nobody can sign in as them.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Firebase
+
+Project **`christmas-lists-41c76`**. Config is committed in
+[`src/config/firebase.ts`](src/config/firebase.ts) — that's normal for Firebase web keys,
+which are identifiers rather than secrets.
+
+Three Firestore collections:
+
+| Collection | Shape | Holds |
+|---|---|---|
+| `christmas-lists` | one doc, `all-lists` | every user's wishlist |
+| `gifts-giving` | one doc per user id | what that person plans to give |
+| `user-prefs` | one doc per user id | small per-user settings |
+
+Security rules aren't in this repo — they're edited in the Firebase console. See
+[FIRESTORE_RULES_SETUP.md](FIRESTORE_RULES_SETUP.md) for the current setup and how to
+change them.
+
+## Security posture — read this before trusting it with a secret
+
+This app is built for convenience among family, not privacy. Specifically:
+
+- **All data is world-readable.** Firestore rules allow unauthenticated read/write, so
+  anyone who finds the project can read every list and every gift plan.
+- **The "Secret Santas" toggle is cosmetic.** It hides giver names in the UI, but the raw
+  `checkedBy` array ships to the browser. Anyone with devtools can see who's buying what.
+- **Passwords are weakly protected.** Unsalted SHA-256 hashes are in the client bundle and
+  are reversible by lookup for anything guessable. They keep the family honest; they won't
+  stop a stranger.
+
+Fine for wishlists. Don't put anything genuinely sensitive in here.
+
+## Layout
+
+```
+src/
+  App.tsx                     sign-in vs. dashboard, snow animation
+  components/
+    SignInPage.tsx            roster + password modal
+    Dashboard.tsx             lists, gifts-giving, settings, PDF export
+    ChristmasItemComponent.tsx   a wishlist row
+    GiftItemComponent.tsx        a gifts-giving row
+    AddItemForm.tsx
+  utils/
+    storage.ts                app-facing API; localStorage cache + Firestore
+    firebaseStorage.ts        Firestore reads/writes and subscriptions
+    hash.ts                   SHA-256 via Web Crypto
+  types/index.ts              types, USERS roster, password hashes
+```
+
+`storage.ts` writes to localStorage first and Firestore second, so the app keeps working
+offline and falls back to the local copy if Firestore is unreachable.

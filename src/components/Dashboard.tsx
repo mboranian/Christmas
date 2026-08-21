@@ -120,22 +120,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     };
   }, [isSettingsOpen]);
 
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [lists, gifts] = await Promise.all([
-        getAllLists(),
-        getGiftsGiving(currentUser.id)
-      ]);
-      setAllLists(lists);
-      setGiftsGiving(gifts);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const toggleAnonymize = async (value?: boolean) => {
     const next = typeof value === 'boolean' ? value : !anonymizeGivers;
     setAnonymizeGivers(next);
