@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BsFillGearFill } from "react-icons/bs";
 import { ChristmasList, ChristmasItem, User, USERS, GiftsGiving, GiftItem } from '../types';
-import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, unsubscribeFromLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
+import { createOrUpdateUserList, generateId, getAllLists, subscribeToLists, getGiftsGiving, saveGiftsGiving, subscribeToGiftsGiving, getUserPrefs, saveUserPrefs, subscribeToUserPrefs } from '../utils/storage';
 import AddItemForm from './AddItemForm';
 import ChristmasItemComponent from './ChristmasItemComponent';
 import GiftItemComponent from './GiftItemComponent';
@@ -87,7 +87,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     // Cleanup subscriptions on unmount
     return () => {
       unsubscribeLists();
-      unsubscribeFromLists();
       unsubscribeGifts();
       if (typeof unsubscribePrefs === 'function') unsubscribePrefs();
     };
@@ -142,7 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     setIsSyncing(true);
     try {
       await createOrUpdateUserList(newList);
-      // Don't need to call loadData - real-time listener will update automatically
+      // The real-time listener updates the UI; no refetch needed.
     } catch (error) {
       console.error('Error creating list:', error);
     } finally {
@@ -261,28 +260,53 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
     }
   };
 
-  const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
+  // Set an item's checked state explicitly. Idempotent: asking for the state it
+  // is already in does nothing, so callers that need a definite outcome (like
+  // removing a gift) cannot accidentally flip it the other way.
+  const setItemChecked = async (listOwnerId: string, itemId: string, checked: boolean) => {
     setIsSyncing(true);
     try {
       const lists = await getAllLists();
-      const listIndex = lists.findIndex(list => list.ownerId === listOwnerId);
-      
-      if (listIndex === -1) return;
+      const list = lists.find(l => l.ownerId === listOwnerId);
+      if (!list) return;
 
-      const list = lists[listIndex];
-      const itemIndex = list.items.findIndex(item => item.id === itemId);
-      
-      if (itemIndex === -1) return;
+      const item = list.items.find(i => i.id === itemId);
+      if (!item) return;
 
-      const item = list.items[itemIndex];
-      const isCurrentlyChecked = item.checkedBy.includes(currentUser.id);
+      if (item.checkedBy.includes(currentUser.id) === checked) return;
 
-      if (isCurrentlyChecked) {
+      const isSomeoneElsesList = listOwnerId !== currentUser.id;
+
+      if (checked) {
+        item.checkedBy = [...item.checkedBy, currentUser.id];
+
+        // Checking someone else's item also records it as a gift you're giving.
+        if (isSomeoneElsesList) {
+          const giftItem: GiftItem = {
+            id: generateId(),
+            title: item.title,
+            source: 'checked',
+            sourceItemId: itemId,
+            createdAt: Date.now()
+          };
+          // Firestore rejects undefined, so only set these when they have values.
+          if (item.link) giftItem.link = item.link;
+          if (item.notes) giftItem.notes = item.notes;
+
+          // Re-read first so we don't clobber changes made elsewhere.
+          const currentGifts = await getGiftsGiving(currentUser.id);
+          const updatedGifts = { ...currentGifts };
+          if (!updatedGifts.gifts[listOwnerId]) {
+            updatedGifts.gifts[listOwnerId] = [];
+          }
+          updatedGifts.gifts[listOwnerId].push(giftItem);
+          await saveGiftsGiving(currentUser.id, updatedGifts);
+        }
+      } else {
         item.checkedBy = item.checkedBy.filter(userId => userId !== currentUser.id);
-        
-        // If unchecking someone else's item, remove from gifts giving
-        if (listOwnerId !== currentUser.id) {
-          // Fetch latest gifts data to avoid overwriting other changes
+
+        // Unchecking drops the matching gift, if one is still recorded.
+        if (isSomeoneElsesList) {
           const currentGifts = await getGiftsGiving(currentUser.id);
           const updatedGifts = { ...currentGifts };
           if (updatedGifts.gifts[listOwnerId]) {
@@ -292,43 +316,24 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
             await saveGiftsGiving(currentUser.id, updatedGifts);
           }
         }
-      } else {
-        item.checkedBy.push(currentUser.id);
-        
-        // If checking someone else's item, add to gifts giving
-        if (listOwnerId !== currentUser.id) {
-          const giftItem: GiftItem = {
-            id: generateId(),
-            title: item.title,
-            source: 'checked',
-            sourceItemId: itemId,
-            createdAt: Date.now()
-          };
-          // Only add link and notes if they have values (Firestore doesn't accept undefined)
-          if (item.link) giftItem.link = item.link;
-          if (item.notes) giftItem.notes = item.notes;
-          
-          // Fetch latest gifts data to avoid overwriting other changes
-          const currentGifts = await getGiftsGiving(currentUser.id);
-          console.log('🎁 Current gifts before adding:', currentGifts);
-          const updatedGifts = { ...currentGifts };
-          if (!updatedGifts.gifts[listOwnerId]) {
-            updatedGifts.gifts[listOwnerId] = [];
-          }
-          updatedGifts.gifts[listOwnerId].push(giftItem);
-          console.log('🎁 Updated gifts after adding:', updatedGifts);
-          await saveGiftsGiving(currentUser.id, updatedGifts);
-          console.log('🎁 Gift saved successfully');
-        }
       }
 
       await createOrUpdateUserList(list);
       // Real-time listener will update the UI automatically
     } catch (error) {
-      console.error('Error toggling item check:', error);
+      console.error('Error updating item check state:', error);
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  // Flip whichever state the viewer is currently looking at.
+  const toggleItemCheck = async (listOwnerId: string, itemId: string) => {
+    const item = allLists
+      .find(list => list.ownerId === listOwnerId)
+      ?.items.find(i => i.id === itemId);
+
+    await setItemChecked(listOwnerId, itemId, !item?.checkedBy.includes(currentUser.id));
   };
 
   // Add a manual gift item to a specific recipient
@@ -420,7 +425,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
 
         // If this gift came from checking an item on their list, uncheck it
         if (giftToDelete && giftToDelete.source === 'checked' && giftToDelete.sourceItemId) {
-          await toggleItemCheck(recipientId, giftToDelete.sourceItemId);
+          await setItemChecked(recipientId, giftToDelete.sourceItemId, false);
         }
         
         // Real-time listener will reconcile when Firestore updates
@@ -570,7 +575,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, onSignOut }) => {
                     />
                     <span className="toggle-slider" />
                   </label>
-                  <span className="tooltip-text" role="tooltip" id="anonymize-tooltip">Hide who's giving what to whom</span>
+                  <span className="tooltip-text" role="tooltip" id="anonymize-tooltip">Hides giver names in this app</span>
                 </div>
               </div>
 

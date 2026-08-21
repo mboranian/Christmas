@@ -10,6 +10,14 @@ import {
 import { db } from '../config/firebase';
 import { ChristmasList, GiftsGiving } from '../types';
 
+// Chatty progress logging is useful while developing and is noise (and a small
+// privacy leak — these payloads contain gift data) in the deployed app.
+const debug = (...args: unknown[]) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.log(...args);
+  }
+};
+
 const LISTS_COLLECTION = 'christmas-lists';
 const LISTS_DOCUMENT = 'all-lists';
 const GIFTS_GIVING_COLLECTION = 'gifts-giving';
@@ -30,23 +38,17 @@ export class FirebaseStorage {
     // If already saving, queue this data for next save
     if (this.isSaving) {
       this.saveQueue = lists;
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⏳ Save in progress, queuing data...');
-      }
+      debug('⏳ Save in progress, queuing data...');
       return;
     }
 
     // Check if data actually changed to prevent unnecessary saves
     if (this.lastSavedData === currentData) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 Skipping save - data unchanged');
-      }
+      debug('🔄 Skipping save - data unchanged');
       return;
     }
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('💾 Saving new data to Firebase...');
-    }
+      debug('💾 Saving new data to Firebase...');
 
     this.isSaving = true;
     try {
@@ -57,9 +59,7 @@ export class FirebaseStorage {
       this.lastSavedData = currentData;
       
       // Only log in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Successfully saved lists to Firebase');
-      }
+      debug('✅ Successfully saved lists to Firebase');
       
       // If there's queued data that's different, save it
       if (this.saveQueue && JSON.stringify(this.saveQueue) !== currentData) {
@@ -84,12 +84,12 @@ export class FirebaseStorage {
   async saveUserPrefs(userId: string, prefs: Record<string, any>): Promise<void> {
     try {
       const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-      console.log(`💾 Attempting to save prefs for ${userId} to Firestore:`, prefs);
+      debug(`💾 Attempting to save prefs for ${userId} to Firestore:`, prefs);
       await setDoc(docRef, {
         ...prefs,
         lastUpdated: Date.now()
       });
-      console.log(`✅ Successfully saved prefs for ${userId} to Firestore`);
+      debug(`✅ Successfully saved prefs for ${userId} to Firestore`);
     } catch (error: any) {
       console.error('❌ Error saving user prefs to Firestore:', error);
       console.error('Error code:', error?.code);
@@ -108,14 +108,14 @@ export class FirebaseStorage {
   async getUserPrefs(userId: string): Promise<Record<string, any>> {
     try {
       const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-      console.log(`📖 Attempting to read prefs for ${userId} from Firestore`);
+      debug(`📖 Attempting to read prefs for ${userId} from Firestore`);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as Record<string, any>;
-        console.log(`✅ Successfully fetched prefs for ${userId}:`, data);
+        debug(`✅ Successfully fetched prefs for ${userId}:`, data);
         return data;
       } else {
-        console.log(`📝 No prefs found for ${userId} in Firestore, returning empty`);
+        debug(`📝 No prefs found for ${userId} in Firestore, returning empty`);
         return {};
       }
     } catch (error: any) {
@@ -134,14 +134,14 @@ export class FirebaseStorage {
    */
   subscribeToUserPrefs(userId: string, callback: (data: Record<string, any>) => void) {
     const docRef = doc(db, USER_PREFS_COLLECTION, userId);
-    console.log(`🔔 Setting up real-time listener for prefs (${userId})`);
+    debug(`🔔 Setting up real-time listener for prefs (${userId})`);
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data() as Record<string, any>;
-        console.log(`🔄 Real-time update for prefs (${userId}):`, data);
+        debug(`🔄 Real-time update for prefs (${userId}):`, data);
         callback(data);
       } else {
-        console.log(`📝 Real-time update: No prefs doc exists for ${userId}`);
+        debug(`📝 Real-time update: No prefs doc exists for ${userId}`);
         callback({});
       }
     }, (error: any) => {
@@ -167,14 +167,10 @@ export class FirebaseStorage {
         const data = docSnap.data();
         
         // Only log in development
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Successfully fetched lists from Firebase');
-        }
+      debug('✅ Successfully fetched lists from Firebase');
         return data.lists || [];
       } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📝 No lists found in Firebase, starting fresh');
-        }
+      debug('📝 No lists found in Firebase, starting fresh');
         return [];
       }
     } catch (error) {
@@ -205,15 +201,11 @@ export class FirebaseStorage {
           lastReceivedData = currentData;
           
           // Only log in development and throttle logs
-          if (process.env.NODE_ENV === 'development') {
-            console.log('🔄 Real-time update received from Firebase');
-          }
+      debug('🔄 Real-time update received from Firebase');
           callback(data.lists || []);
         }
       } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📝 No document exists, starting with empty lists');
-        }
+      debug('📝 No document exists, starting with empty lists');
         callback([]);
       }
     }, (error) => {
@@ -224,20 +216,6 @@ export class FirebaseStorage {
     return this.unsubscribe;
   }
 
-  /**
-   * Unsubscribe from real-time updates
-   */
-  unsubscribeFromLists(): void {
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-      
-      // Only log in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔕 Unsubscribed from Firebase real-time updates');
-      }
-    }
-  }
 
   /**
    * Check if Firebase is available (network connectivity)
@@ -257,7 +235,7 @@ export class FirebaseStorage {
   async goOffline(): Promise<void> {
     try {
       await disableNetwork(db);
-      console.log('📴 Firebase is now offline');
+      debug('📴 Firebase is now offline');
     } catch (error) {
       console.error('Error going offline:', error);
     }
@@ -269,7 +247,7 @@ export class FirebaseStorage {
   async goOnline(): Promise<void> {
     try {
       await enableNetwork(db);
-      console.log('🌐 Firebase is now online');
+      debug('🌐 Firebase is now online');
     } catch (error) {
       console.error('Error going online:', error);
     }
@@ -281,12 +259,12 @@ export class FirebaseStorage {
   async saveGiftsGiving(userId: string, giftsData: GiftsGiving): Promise<void> {
     try {
       const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-      console.log(`💾 Attempting to save gifts-giving for ${userId} to Firestore`);
+      debug(`💾 Attempting to save gifts-giving for ${userId} to Firestore`);
       await setDoc(docRef, {
         ...giftsData,
         lastUpdated: Date.now()
       });
-      console.log(`✅ Successfully saved gifts-giving for ${userId} to Firestore`);
+      debug(`✅ Successfully saved gifts-giving for ${userId} to Firestore`);
     } catch (error: any) {
       console.error('❌ Error saving gifts-giving to Firestore:', error);
       console.error('Error code:', error?.code);
@@ -305,16 +283,16 @@ export class FirebaseStorage {
   async getGiftsGiving(userId: string): Promise<GiftsGiving> {
     try {
       const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-      console.log(`📖 Attempting to read gifts-giving for ${userId} from Firestore`);
+      debug(`📖 Attempting to read gifts-giving for ${userId} from Firestore`);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
         const data = docSnap.data() as GiftsGiving;
-        console.log(`✅ Successfully fetched gifts-giving for ${userId} from Firestore`);
+        debug(`✅ Successfully fetched gifts-giving for ${userId} from Firestore`);
         return data;
       } else {
         // Return empty structure if no data exists
-        console.log(`📝 No gifts-giving data for ${userId} in Firestore, starting fresh`);
+        debug(`📝 No gifts-giving data for ${userId} in Firestore, starting fresh`);
         return { userId, gifts: {} };
       }
     } catch (error: any) {
@@ -333,15 +311,15 @@ export class FirebaseStorage {
    */
   subscribeToGiftsGiving(userId: string, callback: (data: GiftsGiving) => void): Unsubscribe {
     const docRef = doc(db, GIFTS_GIVING_COLLECTION, userId);
-    console.log(`🔔 Setting up real-time listener for gifts-giving (${userId})`);
+    debug(`🔔 Setting up real-time listener for gifts-giving (${userId})`);
     
     const unsubscribe = onSnapshot(docRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data() as GiftsGiving;
-        console.log(`🔄 Real-time update for gifts-giving (${userId})`);
+        debug(`🔄 Real-time update for gifts-giving (${userId})`);
         callback(data);
       } else {
-        console.log(`📝 Real-time update: No gifts-giving doc exists for ${userId}`);
+        debug(`📝 Real-time update: No gifts-giving doc exists for ${userId}`);
         callback({ userId, gifts: {} });
       }
     }, (error: any) => {
