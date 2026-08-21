@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from './types';
 import { getCurrentUser, setCurrentUser } from './utils/storage';
+import ErrorBoundary from './components/ErrorBoundary';
 import SignInPage from './components/SignInPage';
 import Dashboard from './components/Dashboard';
 import './App.css';
@@ -48,11 +49,13 @@ function App() {
       <div className="snowflake">❆</div>
       <div className="snowflake">❄</div>
       
-      {currentUser ? (
-        <Dashboard currentUser={currentUser} onSignOut={handleSignOut} />
-      ) : (
-        <SignInPage onSignIn={handleSignIn} />
-      )}
+      <ErrorBoundary>
+        {currentUser ? (
+          <Dashboard currentUser={currentUser} onSignOut={handleSignOut} />
+        ) : (
+          <SignInPage onSignIn={handleSignIn} />
+        )}
+      </ErrorBoundary>
     </div>
   );
 }

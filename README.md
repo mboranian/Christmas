@@ -27,9 +27,10 @@ CI=true npm test -- --watchAll=false   # once, as CI runs it
 npm run build                   # production build into ./build
 ```
 
-47 tests cover sign-in, the list and gift mutations, PDF export, password
-hashing, and the storage layer including the migration fallback. CI blocks a
-deploy when any of them fail, so they're the safety net for changes to this app.
+51 tests cover sign-in, the list and gift mutations, PDF export, password
+hashing, the error boundary, and the storage layer including the migration
+fallback. CI blocks a deploy when any of them fail, so they're the safety net
+for changes to this app.
 
 ## Deploying
 
@@ -116,6 +117,7 @@ Fine for wishlists. Don't put anything genuinely sensitive in here.
 src/
   App.tsx                     sign-in vs. dashboard, snow animation
   components/
+    ErrorBoundary.tsx         catches render errors so the page isn't blank
     SignInPage.tsx            roster + password modal
     Dashboard.tsx             lists, gifts-giving, settings, PDF export
     ChristmasItemComponent.tsx   a wishlist row
