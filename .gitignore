@@ -25,3 +25,6 @@ yarn-error.log*
 # Plaintext passwords. Edit these locally; scripts/generate-password-hashes.js
 # turns them into src/types/passwordHashes.ts, which IS committed.
 /passwords.json
+
+# Local dev-server config for the preview tool
+/.claude/launch.json
