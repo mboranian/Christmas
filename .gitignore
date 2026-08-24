@@ -21,3 +21,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Plaintext passwords. Edit these locally; scripts/generate-password-hashes.js
+# turns them into src/types/passwordHashes.ts, which IS committed.
+/passwords.json

@@ -21,7 +21,10 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
+    "passwords": "node scripts/generate-password-hashes.js",
+    "prestart": "npm run passwords",
     "start": "PORT=3001 react-scripts start",
+    "prebuild": "npm run passwords",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

@@ -30,7 +30,7 @@ CI=true npm test -- --watchAll=false   # once, as CI runs it
 npm run build                   # production build into ./build
 ```
 
-67 tests cover sign-in, the list and gift mutations, PDF export, password
+71 tests cover sign-in, the list and gift mutations, PDF export, password
 hashing, the error boundary, the per-season paths and read-only archives, and
 the storage layer including the migration fallback. CI blocks a deploy when any of them fail, so they're the safety net
 for changes to this app.
@@ -53,22 +53,48 @@ Pages is configured to deploy from GitHub Actions (Settings → Pages → Source
 versions of this repo committed the built site into a `docs/` folder and served it from the
 branch — that's gone, and build output is no longer tracked in git.
 
-## Adding or changing a family member
+## Passwords
 
-Two steps, both in [`src/types/index.ts`](src/types/index.ts):
+Write passwords in plain English in **`passwords.json`** at the repo root. That file is
+gitignored and never leaves your machine:
 
-1. Add an entry to `USERS` with a lowercase `id` and a display `name`.
-2. Add a matching SHA-256 password hash to `USER_PASSWORD_HASHES`, keyed by that same `id`.
-
-Generate the hash with:
-
-```bash
-echo -n "theirpassword" | shasum -a 256
+```json
+{
+  "andy": "their password",
+  "elena": "their password"
+}
 ```
 
+`scripts/generate-password-hashes.js` turns it into
+[`src/types/passwordHashes.ts`](src/types/passwordHashes.ts) — SHA-256 hashes only, which
+*is* committed and is what the app actually checks against. It runs automatically before
+`npm start` and `npm run build`, or on demand:
+
+```bash
+npm run passwords
+```
+
+Copy `passwords.example.json` to `passwords.json` to get started. Never edit
+`passwordHashes.ts` by hand; it's overwritten.
+
+**The one trap:** change a password, commit, and push *without* building, and the deploy
+still carries the old hash. `npm run build` or `npm test` locally will catch it — there's a
+test that fails when `passwords.json` and the generated hashes disagree. That test skips in
+CI, which clones without the plaintext file.
+
+A user missing from `passwords.json` keeps whatever hash was generated before, so a
+partly-filled file can't lock anyone out. And if `passwords.json` is absent entirely — as
+in CI — the generator leaves the committed hashes untouched rather than wiping them.
+
+### Adding a family member
+
+1. Add an entry to `USERS` in [`src/types/index.ts`](src/types/index.ts) with a lowercase
+   `id` and a display `name`.
+2. Add the same `id` to `passwords.json` with their password.
+3. Run `npm run passwords` and commit the regenerated hash file.
+
 There's no signup flow and no Firebase Auth — the roster is hardcoded, and sign-in just
-compares a SHA-256 hash of what was typed against the table. Missing a hash for a user
-means nobody can sign in as them.
+compares a SHA-256 hash of what was typed against the table.
 
 ## Firebase
 
@@ -144,7 +170,8 @@ src/
     storage.ts                app-facing API; localStorage cache + Firestore
     firebaseStorage.ts        Firestore reads/writes and subscriptions
     hash.ts                   SHA-256 via Web Crypto
-  types/index.ts              types, USERS roster, password hashes, season years
+  types/index.ts              types, USERS roster, season years
+  types/passwordHashes.ts     GENERATED from passwords.json — do not edit
 ```
 
 `storage.ts` is the boundary. Reads go to Firestore and fall back to a localStorage
