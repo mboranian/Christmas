@@ -1864,10 +1864,10 @@ body {
 
 /* Deep-red field behind the lists; sidebar stays parchment */
 .dashboard {
-  background: #6e0a1e;
+  background: #ba0c2f;
 }
 .main-content {
-  background: #6e0a1e;
+  background: #ba0c2f;
   /* was max-width: calc(100vw - 220px) — 20px short of the edge, which let the
      darker backdrop show as a bar on the right. Let the list field fill fully. */
   max-width: none;
@@ -2000,9 +2000,17 @@ body {
   box-shadow: 0 6px 16px rgba(36, 87, 65, 0.28);
 }
 .buy-button,
-.modal-submit-button,
-.export-pdf-button {
+.modal-submit-button {
   background: var(--cranberry);
+}
+/* Sits directly on the Muni-red field, so it needs its own contrast */
+.export-pdf-button {
+  background: #8f0a24;
+  border: 1px solid rgba(251, 246, 236, 0.55);
+}
+.export-pdf-button:hover {
+  background: #70061a;
+  border-color: rgba(251, 246, 236, 0.8);
 }
 .buy-button:hover,
 .modal-submit-button:hover {
