@@ -2003,13 +2003,18 @@ body {
 .modal-submit-button {
   background: var(--cranberry);
 }
-/* Sits directly on the Muni-red field, so it uses the AC Transit green */
+/* Green buttons sitting directly on the Muni-red field get a white outline.
+   Scoped to those two: Add Gift and Save sit on cream cards, where a white
+   border would be invisible. */
 .export-pdf-button {
   background: var(--pine);
-  border: none;
 }
 .export-pdf-button:hover {
   background: #00553f;
+}
+.list-section .section-header .add-item-button,
+.export-pdf-button {
+  border: 2px solid #ffffff;
 }
 .buy-button:hover,
 .modal-submit-button:hover {
