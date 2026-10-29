@@ -2003,14 +2003,13 @@ body {
 .modal-submit-button {
   background: var(--cranberry);
 }
-/* Sits directly on the Muni-red field, so it needs its own contrast */
+/* Sits directly on the Muni-red field, so it uses the AC Transit green */
 .export-pdf-button {
-  background: #8f0a24;
-  border: 1px solid rgba(251, 246, 236, 0.55);
+  background: var(--pine);
+  border: none;
 }
 .export-pdf-button:hover {
-  background: #70061a;
-  border-color: rgba(251, 246, 236, 0.8);
+  background: #00553f;
 }
 .buy-button:hover,
 .modal-submit-button:hover {
