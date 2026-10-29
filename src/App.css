@@ -2003,7 +2003,8 @@ body {
 .modal-submit-button {
   background: var(--cranberry);
 }
-/* Green buttons sitting directly on the Muni-red field get a white outline.
+/* Green buttons sitting directly on the Muni-red field get a gold outline —
+   the same gold that rings the selected name tab.
    Scoped to those two: Add Gift and Save sit on cream cards, where a white
    border would be invisible. */
 .export-pdf-button {
@@ -2014,7 +2015,7 @@ body {
 }
 .list-section .section-header .add-item-button,
 .export-pdf-button {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--gold);
 }
 .buy-button:hover,
 .modal-submit-button:hover {
